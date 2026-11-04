@@ -20,6 +20,8 @@
 //   t-<X>_to_<Y>   that edge: its test is no longer pending, Y's whole subtree
 //                  is implemented, and the test passes
 //   s-<X>_to_<Y>   that edge's scaffold: forwarder, Y's stub, the test placeholder
+//   c-<part>       common/<part>: its tests (common/<part>/**/*.test.mjs, node --test);
+//                  at least one must exist
 //   anything else, or none: every node and edge; stubs and pending are reported,
 //                  not failed
 //
@@ -228,8 +230,18 @@ async function main() {
     console.log(`check: edge scaffold ${e.name} (agent ${agent})`);
     await nodeStructure(e.to);
     await edgeStructure(e);
+  } else if ((m = agent.match(/^c-([A-Za-z0-9-]+)$/)) && existsSync(path.join(root, "common", m[1]))) {
+    const part = m[1];
+    console.log(`check: common/${part} (agent ${agent})`);
+    const tests = listTests(path.join(root, "common", part)).map(rel);
+    if (!tests.length) say("fail", `common/${part}`, "no tests (common/<part>/**/*.test.mjs)");
+    else {
+      const r = await run(process.execPath, ["--test", `--test-timeout=${timeout}`, ...tests], root, timeout * 2);
+      if (r.code === 0) say("ok", `common/${part}`, `${tests.length} test file(s) passed`);
+      else say("fail", `common/${part}`, `${r.timedOut ? "timed out" : `node --test exited ${r.code}`}:\n${indent(r.out.split("\n").filter((l) => !/^\s+at /.test(l)).join("\n"))}`);
+    }
   } else {
-    if (agent && /^[nts]-/.test(agent)) say("fail", `agent ${agent}`, "names no node or edge in this tree");
+    if (agent && /^[ntsc]-/.test(agent)) say("fail", `agent ${agent}`, "names no node or edge in this tree");
     console.log(`check: the whole tree${agent ? ` (agent ${agent})` : ""}`);
     if (nodes.size === 0) say("fail", "tree", "no nodes found (<id>/self/index.mjs)");
     if (roots.length !== 1) say("fail", "tree", `${roots.length} roots (${roots.join(", ") || "none"}): want exactly one`);
@@ -243,6 +255,30 @@ async function main() {
   const n = (s) => results.filter((r) => r === s).length;
   console.log(`\ncheck: ${n("ok")} ok, ${n("pending")} pending, ${n("fail")} failed`);
   process.exit(n("fail") ? 1 : 0);
+}
+
+function listTests(dir) {
+  const out = [];
+  for (const name of readdirSync(dir)) {
+    if (name === "node_modules") continue;
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) out.push(...listTests(full));
+    else if (name.endsWith(".test.mjs")) out.push(full);
+  }
+  return out.sort();
+}
+
+function run(cmd, argv, cwd, timeout) {
+  return new Promise((resolve) => {
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT; // set when check itself runs under node --test: the child would report to it and exit 0
+    const p = spawn(cmd, argv, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    p.stdout.on("data", (d) => (out += d));
+    p.stderr.on("data", (d) => (out += d));
+    const t = setTimeout(() => p.kill("SIGKILL"), timeout);
+    p.on("close", (code, signal) => { clearTimeout(t); resolve({ code, out, timedOut: signal === "SIGKILL" }); });
+  });
 }
 
 function firstLine(s) { return String(s || "").split("\n")[0]; }
