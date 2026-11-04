@@ -22,6 +22,9 @@
 //   s-<X>_to_<Y>   that edge's scaffold: forwarder, Y's stub, the test placeholder
 //   c-<part>       common/<part>: its tests (common/<part>/**/*.test.mjs, node --test);
 //                  at least one must exist
+// n-<X> also runs X's own tests (<X>/self/**/*.test.mjs), when it has any.
+// --agent overrides the agent (the forwarded `check as <agent>`, for reviewers:
+// the gate itself always keys on the real agent).
 //   anything else, or none: every node and edge; stubs and pending are reported,
 //                  not failed
 //
@@ -162,6 +165,16 @@ async function main() {
   };
   const rel = (f) => path.relative(root, f);
 
+  // A folder's own tests (**/*.test.mjs, node --test); false when it has none.
+  async function ownTests(dir, what) {
+    const tests = listTests(dir).map(rel);
+    if (!tests.length) return false;
+    const r = await run(process.execPath, ["--test", `--test-timeout=${timeout}`, ...tests], root, timeout * 2);
+    if (r.code === 0) say("ok", what, `${tests.length} test file(s) passed`);
+    else say("fail", what, `${r.timedOut ? "timed out" : `node --test exited ${r.code}`}:\n${indent(r.out.split("\n").filter((l) => !/^\s+at /.test(l)).join("\n"))}`);
+    return true;
+  }
+
   async function nodeStructure(id) {
     const ins = inEdges(id);
     if (ins.length > 1) say("fail", `node ${id}`, `${ins.length} in-edges (${ins.map((e) => e.name).join(", ")}); the One-Edge Rule allows one owner`);
@@ -220,6 +233,7 @@ async function main() {
     const p = await nodeStructure(id);
     if (p.ok && p.stub) say("fail", `node ${id}`, "still _sheo_stub: the implementation removes the marker");
     else if (p.ok) say("ok", `node ${id}`, "implemented");
+    await ownTests(path.dirname(nodes.get(id)), `node ${id}`);
     for (const e of [...inEdges(id), ...outEdges(id)]) await edgeBehaviour(e, { strict: false });
   } else if ((m = agent.match(/^t-(.+)$/)) && byName(m[1])) {
     const e = byName(m[1]);
@@ -233,13 +247,7 @@ async function main() {
   } else if ((m = agent.match(/^c-([A-Za-z0-9-]+)$/)) && existsSync(path.join(root, "common", m[1]))) {
     const part = m[1];
     console.log(`check: common/${part} (agent ${agent})`);
-    const tests = listTests(path.join(root, "common", part)).map(rel);
-    if (!tests.length) say("fail", `common/${part}`, "no tests (common/<part>/**/*.test.mjs)");
-    else {
-      const r = await run(process.execPath, ["--test", `--test-timeout=${timeout}`, ...tests], root, timeout * 2);
-      if (r.code === 0) say("ok", `common/${part}`, `${tests.length} test file(s) passed`);
-      else say("fail", `common/${part}`, `${r.timedOut ? "timed out" : `node --test exited ${r.code}`}:\n${indent(r.out.split("\n").filter((l) => !/^\s+at /.test(l)).join("\n"))}`);
-    }
+    if (!(await ownTests(path.join(root, "common", part), `common/${part}`))) say("fail", `common/${part}`, "no tests (common/<part>/**/*.test.mjs)");
   } else {
     if (agent && /^[ntsc]-/.test(agent)) say("fail", `agent ${agent}`, "names no node or edge in this tree");
     console.log(`check: the whole tree${agent ? ` (agent ${agent})` : ""}`);
