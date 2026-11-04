@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Installs the project's fixed dependencies (package-lock.json). Agents don't change them.
+set -e
+npm ci --ignore-scripts --no-audit --no-fund

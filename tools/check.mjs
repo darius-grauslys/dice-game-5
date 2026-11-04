@@ -30,7 +30,12 @@
 //
 // Each import and each _sheo_check() runs in its own child process with a
 // timeout, so a test that leaves a server open (or hangs) fails instead of
-// hanging the check.
+// hanging the check. An edge test that exports `_sheo_browser = true` runs its
+// _sheo_check() in headless Chromium instead (tools/browser.mjs check).
+//
+// Run where only part of the tree is visible (an agent's harness), the check
+// can't see the nodes at the other ends of edges; it says so and points to the
+// forwarded `check`, which runs on the whole tree.
 //
 // Usage: check.mjs [--agent A] [--root DIR] [--timeout MS] [paths...]
 // (paths are accepted from project_checks and ignored). Exit 1 on any failure.
@@ -53,7 +58,7 @@ if (process.argv[2] === "--child") {
   try {
     const m = await import(pathToFileURL(file).href);
     const exports = Object.keys(m);
-    const flags = { stub: m._sheo_stub === true, pending: m._sheo_pending === true };
+    const flags = { stub: m._sheo_stub === true, pending: m._sheo_pending === true, browser: m._sheo_browser === true };
     if (mode === "probe") {
       out({ ok: true, exports, ...flags, checkFn: typeof m._sheo_check === "function" });
     } else {
@@ -152,6 +157,13 @@ async function main() {
   for (const id of dupes) say("fail", `node ${id}`, "two nodes share this id");
   for (const id of nodes.keys()) if (!ID.test(id)) say("fail", `node ${id}`, "ids may not contain _ (it separates an edge's ends)");
   for (const s of strays) say("fail", s, "not edges/<X>/<X>_to_<Y>.mjs");
+  const hidden = edges.some((e) => !nodes.has(e.from) || !nodes.has(e.to));
+  if (hidden && existsSync(AGENT_FILE)) {
+    console.log("check: only part of the tree is visible here (edges name nodes this tree doesn't have).\n" +
+      "This is an agent's view, not the project: run the forwarded `check` (no arguments), which runs on the whole tree.\n" +
+      "Running tools/check.mjs by hand here can't pass, and its failures say nothing about your work.");
+    process.exit(1);
+  }
   for (const e of edges) {
     if (!nodes.has(e.from)) say("fail", `edge ${e.name}`, `no node ${e.from} (no ${e.from}/self/index.mjs)`);
     if (!nodes.has(e.to)) say("fail", `edge ${e.name}`, `no node ${e.to} (no ${e.to}/self/index.mjs)`);
@@ -222,9 +234,22 @@ async function main() {
       else say("pending", `edge ${e.name}`, `waits on ${stubs.join(", ")}`);
       return;
     }
-    const r = await child("run", e.test, timeout);
-    if (r.ok) say("ok", `edge ${e.name}`, "_sheo_check passed");
+    const t = await probe(e.test);
+    const r = t.browser ? await inBrowser(e.test) : await child("run", e.test, timeout);
+    if (r.ok) say("ok", `edge ${e.name}`, `_sheo_check passed${t.browser ? " (in Chromium)" : ""}`);
     else say("fail", `edge ${e.name}`, `_sheo_check failed:\n${indent(r.error)}${r.stderr ? `\n  stderr:\n${indent(r.stderr)}` : ""}`);
+  }
+
+  // An edge test marked _sheo_browser: its _sheo_check() runs in a page (tools/browser.mjs).
+  async function inBrowser(file) {
+    const tool = path.join(path.dirname(SELF), "browser.mjs");
+    const r = await run(process.execPath, [tool, "check", rel(file), "--root", root, "--timeout", String(timeout * 2)], root, timeout * 3);
+    const line = r.out.trim().split("\n").pop();
+    try {
+      const o = JSON.parse(line);
+      const tail = o.console && o.console.length ? `\n  console:\n${indent(o.console.slice(-20).join("\n"))}` : "";
+      return { ok: o.ok, error: (o.error || "") + tail };
+    } catch { return { ok: false, error: `tools/browser.mjs gave no result (exit ${r.code}${r.timedOut ? ", timed out" : ""}):\n${r.out.slice(-2000)}` }; }
   }
 
   const byName = (name) => edges.find((e) => e.name === name);
