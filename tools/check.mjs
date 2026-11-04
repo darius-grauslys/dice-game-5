@@ -113,9 +113,11 @@ function findEdges(root) {
   const dir = path.join(root, "edges");
   if (!existsSync(dir)) return { edges, strays };
   for (const from of readdirSync(dir)) {
+    if (from.startsWith(".")) continue;
     const sub = path.join(dir, from);
     if (!statSync(sub).isDirectory()) { strays.push(`edges/${from}`); continue; }
     for (const f of readdirSync(sub)) {
+      if (f.startsWith(".")) continue; // .keep: a folder made up front so its agent's scope exists
       const m = f.match(/^([A-Za-z0-9-]+)_to_([A-Za-z0-9-]+)\.mjs$/);
       if (!m || m[1] !== from) { strays.push(`edges/${from}/${f}`); continue; }
       const name = `${m[1]}_to_${m[2]}`;
