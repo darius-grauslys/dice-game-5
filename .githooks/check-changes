@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# Written by `wabbajack hooks`. `wabbajack hooks --update` replaces it with a
+# newer version only while it is exactly one wabbajack wrote: once edited,
+# it is the project's, and never rewritten. Put this project's checks in
+# .githooks/project-checks instead (below), and keep this file wabbajack's.
+#
+# Checks a change: lists the paths it changes, checks them against the
+# agent's writable paths, then runs this project's checks on them.
+#
+#   .githooks/check-changes --staged       what is about to be committed
+#                                          (.githooks/pre-commit runs this)
+#   .githooks/check-changes <base>...HEAD  a branch's change against its base
+#                                          (the merge request's pipeline runs this)
+#   .githooks/check-changes --all          every tracked file, with no scope check
+#                                          (cheese checks runs this; so may a person)
+#
+# The scope: one writable path per line in /etc/sheo/scope/writable, which
+# cheese writes in the dev container for an agent with a sheo-harness scope
+# (cheese turns .githooks on as core.hooksPath in each issue's tree). Without
+# that file (in CI, on a person's machine, or for an agent with no writable
+# paths) there is no scope to check. In --staged mode, a path outside the
+# writable ones that the commit puts back as it is on the branch's base
+# (origin/HEAD, else the one remote branch that isn't this branch's: in an
+# agent's tree, the target) is allowed: that undoes a change, and cheese's
+# merge gate, which compares the branch with its base, sees it so.
+#
+# This runs in the agent's commits (cheese's sheo-git always runs the hook)
+# and, over the whole change, in the merge request's pipeline, which the
+# forge requires to pass before a merge. Plain bash and git only, as a dev
+# image may have nothing else.
+set -u
+
+# --- this project's checks ------------------------------------------------------------
+# .githooks/project-checks, if the project has one, is sourced after the
+# scope check (so a change that touches it outside the writable paths is
+# refused before it is read) and defines this function in place of the
+# empty one here (`wabbajack checks.set` commits it). It gets the changed
+# paths as its arguments (none deleted: only paths that exist), runs from
+# the repository's top, and fails the change by returning non-zero. It
+# also gets SHEO_AGENT, the agent whose change it is (below), to run only
+# that agent's checks; unset, it should run them all. Say what
+# failed on stderr: an agent reads it in its commit, and the next run reads
+# it from a failed pipeline. In --staged mode it sees the working tree,
+# staged and unstaged changes alike. Without the file it checks nothing.
+project_checks() {
+  return 0
+}
+
+# --- the changed paths ----------------------------------------------------------------
+if [ "$#" -ne 1 ]; then
+  echo "usage: $0 --staged | <base>...HEAD | --all" >&2
+  exit 2
+fi
+mode=$1
+cd "$(git rev-parse --show-toplevel)" || exit 2
+if [ "$mode" = --staged ]; then
+  diff=(git diff --cached --name-only --no-renames -z)
+elif [ "$mode" = --all ]; then
+  diff=(git ls-files -z)
+else
+  diff=(git diff --name-only --no-renames -z "$mode")
+fi
+changed=()
+while IFS= read -r -d '' path; do
+  changed+=("$path")
+done < <("${diff[@]}")
+if ! "${diff[@]}" >/dev/null; then
+  echo "check-changes: git couldn't list the changed paths ($mode)" >&2
+  exit 2
+fi
+
+# --- the scope ------------------------------------------------------------------------
+scope="${SHEO_SCOPE_DIR:-/etc/sheo/scope}/writable"
+writable=()
+if [ -r "$scope" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] && writable+=("$line")
+  done < "$scope"
+fi
+# --all checks the project, not an agent's change: no scope.
+if [ "$mode" != --all ] && [ "${#writable[@]}" -gt 0 ]; then
+  base=
+  if [ "$mode" = --staged ]; then
+    if git rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null; then
+      base=refs/remotes/origin/HEAD
+    else
+      own=$(git symbolic-ref -q --short HEAD || true)
+      others=()
+      while IFS= read -r ref; do
+        [ "$ref" = "refs/remotes/origin/$own" ] || others+=("$ref")
+      done < <(git for-each-ref --format='%(refname)' refs/remotes/origin)
+      [ "${#others[@]}" -eq 1 ] && base=${others[0]}
+    fi
+  fi
+  outside=()
+  for path in ${changed[@]+"${changed[@]}"}; do
+    inside=
+    for w in "${writable[@]}"; do
+      if [ "$path" = "$w" ] || [ "${path#"$w"/}" != "$path" ]; then inside=1; break; fi
+    done
+    # As it is on the base: an undone change.
+    if [ -z "$inside" ] && [ -n "$base" ] && git diff --cached --quiet "$base" -- "$path"; then inside=1; fi
+    [ -n "$inside" ] || outside+=("$path")
+  done
+  if [ "${#outside[@]}" -gt 0 ]; then
+    {
+      echo "This change touches paths outside this project's writable paths:"
+      printf '  %s\n' "${outside[@]}"
+      echo "The writable paths:"
+      printf '  %s\n' "${writable[@]}"
+      echo "Unstage those changes (git restore --staged <path>) and undo them (git restore <path>,"
+      echo "or remove a new file), then commit again. A change outside the writable paths is"
+      echo "refused when it is merged."
+    } >&2
+    exit 1
+  fi
+fi
+
+# --- the agent ------------------------------------------------------------------------
+# SHEO_AGENT, for project_checks: who made the change. Given in the
+# environment (the merge request's pipeline sets it from its sheo-agent::
+# label), else from /etc/sheo/scope/agent (cheese writes the run's agent
+# there in the dev container), else unset: a person, or a run that names no
+# agent. --all checks the project, not an agent's change: always unset.
+if [ "$mode" = --all ]; then
+  unset SHEO_AGENT
+elif [ -z "${SHEO_AGENT:-}" ]; then
+  unset SHEO_AGENT
+  agent_file="${SHEO_SCOPE_DIR:-/etc/sheo/scope}/agent"
+  if [ -r "$agent_file" ]; then
+    IFS= read -r agent < "$agent_file" || true
+    [ -n "${agent:-}" ] && export SHEO_AGENT=$agent
+  fi
+else
+  export SHEO_AGENT
+fi
+
+# --- the project's checks, on what still exists -----------------------------------------
+if [ -f .githooks/project-checks ]; then
+  # shellcheck source=/dev/null
+  if ! source .githooks/project-checks; then
+    echo "check-changes: .githooks/project-checks failed to load" >&2
+    exit 2
+  fi
+fi
+present=()
+for path in ${changed[@]+"${changed[@]}"}; do
+  [ -e "$path" ] && present+=("$path")
+done
+[ "${#present[@]}" -gt 0 ] || exit 0
+project_checks "${present[@]}"

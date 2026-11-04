@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Written by `wabbajack hooks`. `wabbajack hooks --update` replaces it with a
+# newer version only while it is exactly one wabbajack wrote: once edited,
+# it is the project's, and never rewritten.
+#
+# The commit hook: checks what is staged, with the same script the merge
+# request's pipeline runs on the whole change (.githooks/check-changes:
+# the agent's writable paths, then this project's checks, from
+# .githooks/project-checks).
+exec "$(dirname "$0")/check-changes" --staged
