@@ -164,20 +164,17 @@ export function Action(input) {
   const f = checkFields("Action", input, [
     "id",
     "seat",
-    "kind",
+    "move",
     "axis",
     "dir",
     "version",
   ]);
   const id = expectNonEmptyString("Action.id", "id" in f, f.id);
   const seat = expectInt("Action.seat", "seat" in f, f.seat, 0, 3);
-  const actKind = expectOneOf("Action.kind", "kind" in f, f.kind, [
-    "turn",
-    "roll",
-  ]);
+  const move = expectOneOf("Action.move", "move" in f, f.move, ["turn", "roll"]);
   let axis;
   let dir;
-  if (actKind === "turn") {
+  if (move === "turn") {
     axis = expectOneOf("Action.axis", "axis" in f, f.axis, AXES);
     dir = expectOneOf("Action.dir", "dir" in f, f.dir, DIRS);
   } else {
@@ -195,7 +192,7 @@ export function Action(input) {
     0,
     Number.MAX_SAFE_INTEGER,
   );
-  return deepFreeze({ kind: "action", id, seat, kind: actKind, axis, dir, version });
+  return deepFreeze({ kind: "action", id, seat, move, axis, dir, version });
 }
 
 export function Last(input) {
@@ -211,11 +208,11 @@ export function Last(input) {
       field("Last.action", true, "null (a deal)", action);
   } else if (action === null) {
     field("Last.action", true, "an Action (a turn or roll)", action);
-  } else if (action.kind !== change) {
+  } else if (action.move !== change) {
     field(
       "Last.action",
       true,
-      `an Action of kind ${JSON.stringify(change)}`,
+      `an Action with move ${JSON.stringify(change)}`,
       action,
     );
   }
