@@ -1,0 +1,32 @@
+# Written by `wabbajack pipeline` once. This project's own from now on:
+# edit it; wabbajack never rewrites it.
+#
+# The merge gate's checks: a merge request into the default branch runs
+# .githooks/check-changes on its whole change, in the project's dev image,
+# on this project's own runner (tag sheo-ci-dice-game-5). The forge merges only once this
+# passes ("Pipelines must succeed"); cheese sends a failure back to the agent.
+#
+# First, as in an agent's run and in `cheese checks`: SHEO_AGENT, the agent
+# whose change it is, from the merge request's sheo-agent::<agent> label
+# (cheese sets it; none: unset, check everything), for the project's checks
+# to key on; then the project's setup (.wabbajack/setup) when there is one.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH
+
+check-changes:
+  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  tags: [sheo-ci-dice-game-5]
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - |
+      unset SHEO_AGENT
+      old_ifs=$IFS; IFS=,
+      for label in ${CI_MERGE_REQUEST_LABELS:-}; do
+        case $label in sheo-agent::?*) SHEO_AGENT=${label#sheo-agent::}; export SHEO_AGENT ;; esac
+      done
+      IFS=$old_ifs
+      echo "SHEO_AGENT=${SHEO_AGENT:-(none: every check)}"
+    - if [ -f .wabbajack/setup ]; then bash .wabbajack/setup; fi
+    - .githooks/check-changes "$CI_MERGE_REQUEST_DIFF_BASE_SHA...HEAD"
