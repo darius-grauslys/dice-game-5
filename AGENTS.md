@@ -20,7 +20,11 @@ tools/check.mjs           the check (fixed: don't edit)
 - Every node has exactly one owner: the one node with an edge into it.
 - A node calls its children only through its edges (`edges/<it>/`).
 - A node imports `common` (`import { ... } from "<relative path>/common/index.mjs"`),
-  and nothing else outside its own `self/` and its edges.
+  and nothing else outside its own `self/` and its edges. Your ticket gives
+  the exact import lines.
+- `common` is pure values and data: `shapes` (the constructors; an Action's
+  move field is `move`, because `kind` is always the value's tag), `rng`,
+  `tables` (`FACES`, `ORIENTATIONS`, `TURN`) and `json`.
 
 ## Markers
 
@@ -38,6 +42,12 @@ the commit and the merge request the same way. Run it before you finish.
 
 Don't run `node --test` or `tools/check.mjs` by hand in place of it:
 `check` is what the gate runs.
+
+Reviewers: `check as <agent>` runs the check another agent's commits get
+(e.g. `check as c-shapes`).
+
+Testing error messages: on Node 24, `assert.throws(fn, /re/)` matches the
+regex against `String(error)`, so anchor it as `/^TypeError: Die\.id: /`.
 
 ## If the ticket is wrong
 
