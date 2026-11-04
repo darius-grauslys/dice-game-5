@@ -1,0 +1,8 @@
+# .githooks/project-checks: sourced by wabbajack's check-changes, which calls
+# project_checks with the changed paths and exports SHEO_AGENT when it knows
+# the agent (the commit hook: /etc/sheo/scope/agent; CI: the MR's
+# sheo-agent:: label). check.mjs keys on the agent and ignores the paths;
+# with no agent it checks the whole tree.
+project_checks() {
+  node tools/check.mjs "$@"
+}
