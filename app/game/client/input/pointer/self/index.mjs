@@ -5,12 +5,23 @@ let pointerState = null;
 
 export function init({canvas}) {
   canvas.addEventListener("pointerdown", (event) => {
-    pointerState = { start: { x: event.offsetX, y: event.offsetY } };
+    pointerState = {
+      at: { x: event.offsetX, y: event.offsetY },
+      now: { x: event.offsetX, y: event.offsetY },
+    };
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {}
+  });
+
+  canvas.addEventListener("pointermove", (event) => {
+    if (!pointerState) return;
+    pointerState.now = { x: event.offsetX, y: event.offsetY };
   });
 
   canvas.addEventListener("pointerup", (event) => {
     if (!pointerState) return;
-    const start = pointerState.start;
+    const start = pointerState.at;
     const end = { x: event.offsetX, y: event.offsetY };
     const dx = Math.abs(end.x - start.x);
     const dy = Math.abs(end.y - start.y);
@@ -31,4 +42,9 @@ export function drain() {
   const g = gestures;
   gestures = [];
   return g;
+}
+
+export function dragging() {
+  if (!pointerState) return null;
+  return { at: pointerState.at, to: pointerState.now };
 }
