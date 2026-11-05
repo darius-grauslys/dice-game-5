@@ -9,6 +9,14 @@ export function drain() {
   return pointer.drain();
 }
 
+export function dragging() {
+  return pointer.dragging();
+}
+
+export function preview(drag, hit, game, seat) {
+  return intent.preview(drag, hit, game, seat);
+}
+
 export function toAction(gesture, hit, game, seat) {
   return intent.toAction(gesture, hit, game, seat);
 }

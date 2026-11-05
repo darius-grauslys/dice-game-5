@@ -1,11 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { Game, Action } from "../../../../../../common/index.mjs";
+import { Game } from "../../../../../../common/index.mjs";
 import {
-  die,
   makePlayers,
-  makeGame,
 } from "../../../../../../common/shapes/test/helpers.mjs";
 
 import { toAction } from "../index.mjs";
@@ -42,10 +40,10 @@ test("toAction: null when game.turn !== seat", () => {
   assert.strictEqual(toAction(gesture, hit, game, 0), null);
 });
 
-test("toAction: press on roll returns a roll action with correct id and version", () => {
+test("toAction: roll gesture returns a roll action with correct id and version", () => {
   const game = gameWithTurn(2, 5, null);
-  const gesture = { kind: "press", at: { x: 10, y: 10 } };
-  const hit = { kind: "roll" };
+  const gesture = { kind: "roll" };
+  const hit = { kind: "roll" }; // ignored for a roll gesture
   const action = toAction(gesture, hit, game, 2);
   assert.ok(action);
   assert.strictEqual(action.kind, "action");
@@ -57,18 +55,18 @@ test("toAction: press on roll returns a roll action with correct id and version"
   assert.strictEqual(action.version, 5);
 });
 
-test("toAction: press on a die returns null", () => {
+test("toAction: press gesture returns null", () => {
   const game = gameWithTurn(0, 0, null);
   const gesture = { kind: "press", at: { x: 10, y: 10 } };
-  const hit = { kind: "die", id: 0, normal: "+z" };
+  const hit = { kind: "roll" };
   assert.strictEqual(toAction(gesture, hit, game, 0), null);
 });
 
 test("toAction: drag on a die of the rightmost group returns a turn action", () => {
   const game = gameWithTurn(0, 3, null);
-  // rightmost group of seat 0's queue: die 3 (last group, last die)
-  const gesture = { kind: "drag", at: { x: 0, y: 0 }, to: { x: 20, y: 0 } };
-  const hit = { kind: "die", id: 3, normal: "+z" };
+  // rightmost group of seat 0's queue: dice [0,1,2,3]; drag up-right gives axis "x"
+  const gesture = { kind: "drag", at: { x: 0, y: 20 }, to: { x: 20, y: 0 } };
+  const hit = { kind: "die", id: 3 };
   const action = toAction(gesture, hit, game, 0);
   assert.ok(action);
   assert.strictEqual(action.kind, "action");
@@ -76,29 +74,28 @@ test("toAction: drag on a die of the rightmost group returns a turn action", () 
   assert.strictEqual(action.seat, 0);
   assert.strictEqual(action.move, "turn");
   assert.strictEqual(action.version, 3);
-  assert.ok(["x", "y", "z"].includes(action.axis));
-  assert.ok([1, -1].includes(action.dir));
+  assert.strictEqual(action.axis, "x");
+  assert.strictEqual(action.dir, -1);
 });
 
 test("toAction: drag with insufficient distance returns null", () => {
   const game = gameWithTurn(0, 0, null);
   const gesture = { kind: "drag", at: { x: 0, y: 0 }, to: { x: 5, y: 0 } };
-  const hit = { kind: "die", id: 3, normal: "+z" };
+  const hit = { kind: "die", id: 3 };
   assert.strictEqual(toAction(gesture, hit, game, 0), null);
 });
 
 test("toAction: drag on a die not in the rightmost group returns null", () => {
   const game = gameWithTurn(0, 0, null);
-  // die 0 is in seat 0's queue but not in the rightmost group (group has dice 0,1,2,3; rightmost is die 3)
-  // but here the whole queue is one group, so all dice are in it; test a different seat's die
-  const gesture = { kind: "drag", at: { x: 0, y: 0 }, to: { x: 20, y: 0 } };
-  const hit = { kind: "die", id: 7, normal: "+z" }; // die 7 belongs to seat 1
+  const gesture = { kind: "drag", at: { x: 0, y: 20 }, to: { x: 20, y: 0 } };
+  const hit = { kind: "die", id: 7 }; // die 7 belongs to seat 1
   assert.strictEqual(toAction(gesture, hit, game, 0), null);
 });
 
-test("toAction: drag with hit normal not in DRAG returns null", () => {
+test("toAction: drag of a >1-die group with axis y returns null", () => {
   const game = gameWithTurn(0, 0, null);
+  // drag right: sector 0 -> axis "y"; a group of >1 die turns only about its row (axis x)
   const gesture = { kind: "drag", at: { x: 0, y: 0 }, to: { x: 20, y: 0 } };
-  const hit = { kind: "die", id: 3, normal: "-x" };
+  const hit = { kind: "die", id: 3 };
   assert.strictEqual(toAction(gesture, hit, game, 0), null);
 });
