@@ -111,8 +111,12 @@ export async function _sheo_check() {
     let consoleErr = null;
     console.error = (msg) => { consoleErr = String(msg); };
     await up.emit(actionMsgFail);
-    console.error = origError;
-    await wait(20);
+    // emit doesn't wait for post.send; poll console.error until called (up to 2 s)
+    const deadline = Date.now() + 2000;
+    while (consoleErr === null && Date.now() < deadline) {
+      await wait(10);
+    }
+    console.error = origError; // restore only after polling
     assert.ok(consoleErr !== null, "console.error should have been called on reject");
     msgs = await up.poll({ wait: false });
     assert.deepStrictEqual(msgs, [], "rejected emit queues nothing");
