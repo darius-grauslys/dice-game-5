@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { Message, Reply } from "../../shapes/index.mjs";
 import { toJSON, fromJSON } from "../../json/index.mjs";
-import { ROUTES, PAGE, encodeEvent, decodeEvents } from "../index.mjs";
+import { ROUTES, PAGE, pageFor, encodeEvent, decodeEvents } from "../index.mjs";
 
 test("ROUTES is the frozen object", () => {
   assert.deepStrictEqual(ROUTES, {
@@ -11,6 +11,8 @@ test("ROUTES is the frozen object", () => {
     client: "/client.js",
     action: "/action",
     events: "/events",
+    music: "/music.json",
+    assets: "/assets/",
   });
   assert.ok(Object.isFrozen(ROUTES));
 });
@@ -20,6 +22,19 @@ test("PAGE is the exact string", () => {
     PAGE,
     '<!doctype html><meta charset="utf-8"><title>dice</title><style>html,body{margin:0;background:#1d2b24}canvas{display:block}</style><canvas width="800" height="600"></canvas><script type="module" src="/client.js"></script>'
   );
+});
+
+test("pageFor(7) inserts the dice-seed meta", () => {
+  assert.strictEqual(
+    pageFor(7),
+    '<!doctype html><meta charset="utf-8"><meta name="dice-seed" content="7"><title>dice</title><style>html,body{margin:0;background:#1d2b24}canvas{display:block}</style><canvas width="800" height="600"></canvas><script type="module" src="/client.js"></script>'
+  );
+});
+
+test("pageFor rejects invalid seeds", () => {
+  assert.throws(() => pageFor(-1), /^TypeError: pageFor: /);
+  assert.throws(() => pageFor(1.5), /^TypeError: pageFor: /);
+  assert.throws(() => pageFor("7"), /^TypeError: pageFor: /);
 });
 
 test("encodeEvent encodes a reply message", () => {
