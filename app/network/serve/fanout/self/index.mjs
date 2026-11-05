@@ -1,5 +1,11 @@
 // fanout: the event-stream subscribers, and catch-up for late joiners.
 // Pure state, no IO.
+//
+// Surface:
+//   join(send) -> number: assign token 1,2,3... never reused; catch-up sends last text
+//   leave(token) -> void: forget subscriber; unknown tokens ignored
+//   publish(text) -> number: send to all in join order, drop failing sends, return count
+//   reset() -> void: clear subscribers and last text, restart tokens at 1
 
 const subs = new Map(); // token -> send function
 const order = []; // tokens in join order
