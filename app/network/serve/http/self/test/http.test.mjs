@@ -158,3 +158,84 @@ test("http: close when nothing listens resolves", async () => {
   await close();
   await close();
 });
+
+test("http: stream route that throws still serves", async () => {
+  const routes = {
+    "GET /throw-stream": () => ({
+      status: 200,
+      type: "text/plain",
+      stream: (send, closed) => {
+        throw new Error("stream boom");
+      },
+    }),
+    "GET /ok": () => ({
+      status: 200,
+      type: "text/plain",
+      body: "ok",
+    }),
+  };
+  const { port } = await listen({ host: "127.0.0.1", port: 0, routes });
+  try {
+    const r1 = await makeRequest(port, "GET", "/throw-stream");
+    assert.equal(r1.status, 200);
+    assert.equal(r1.body, "");
+
+    const r2 = await makeRequest(port, "GET", "/ok");
+    assert.equal(r2.status, 200);
+    assert.equal(r2.body, "ok");
+  } finally {
+    await close();
+  }
+});
+
+test("http: stream route resolves headers before body", async () => {
+  let bodySent = false;
+  const routes = {
+    "GET /stream-delay": () => ({
+      status: 200,
+      type: "text/plain",
+      stream: async (send, closed) => {
+        await new Promise((r) => setTimeout(r, 500));
+        bodySent = true;
+        send("body");
+      },
+    }),
+  };
+  const { port } = await listen({ host: "127.0.0.1", port: 0, routes });
+  try {
+    const start = Date.now();
+    const resp = await fetch(`http://127.0.0.1:${port}/stream-delay`);
+    const elapsed = Date.now() - start;
+    assert.equal(resp.status, 200);
+    assert.equal(resp.headers.get("content-type"), "text/plain");
+    assert.equal(resp.headers.get("cache-control"), "no-store");
+    assert.ok(elapsed < 400, "headers should resolve before body is sent");
+    assert.ok(!bodySent, "body should not be sent yet");
+  } finally {
+    await close();
+  }
+});
+
+test("http: failed listen leaves nothing listening", async () => {
+  const raw = http.createServer(() => {});
+  await new Promise((resolve, reject) => {
+    raw.listen(0, "127.0.0.1", () => resolve());
+    raw.on("error", reject);
+  });
+  const p = raw.address().port;
+
+  let threw = false;
+  try {
+    await listen({ host: "127.0.0.1", port: p, routes: {} });
+  } catch (e) {
+    threw = true;
+    assert.match(String(e), /^Error: /);
+  }
+  assert.ok(threw);
+
+  await new Promise((resolve) => raw.close(() => resolve()));
+
+  const { port: p2 } = await listen({ host: "127.0.0.1", port: 0, routes: {} });
+  assert.ok(p2 > 0);
+  await close();
+});
