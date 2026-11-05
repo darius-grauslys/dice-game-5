@@ -4,7 +4,7 @@ import * as stream from "../../../../edges/link/link_to_stream.mjs";
 
 let h;
 
-export function start({origin}) {
+export async function start({origin}) {
   if (typeof origin !== "string" || !origin.startsWith("http")) {
     throw new TypeError("link.start: origin must be a string starting with http");
   }
@@ -52,10 +52,13 @@ export function start({origin}) {
     }
   }
 
-  return Promise.resolve(Up({ poll: ({wait} = {}) => poll({wait}), emit }));
+  return Up({ poll: ({wait} = {}) => poll({wait}), emit });
 }
 
 export function close() {
-  h.close();
+  if (h) {
+    h.close();
+    h = undefined;
+  }
   return Promise.resolve();
 }
