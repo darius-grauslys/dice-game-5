@@ -111,7 +111,7 @@ export async function _sheo_check() {
     /^Error: init:/,
   );
 
-  // begin argument validation: begin takes no args; the wrapped begin returns a Promise<void>.
+  // begin(): it takes no arguments and resolves to void.
   {
     const b = begin().catch(() => {});
     assert.ok(b instanceof Promise);
