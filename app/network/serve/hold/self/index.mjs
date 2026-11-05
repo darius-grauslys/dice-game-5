@@ -1,8 +1,14 @@
 // hold: POST requests waiting for their Reply, keyed by the action's id.
 // Pure state, no IO.
 
+// Map of id -> resolve function for promises returned by wait().
 const waiting = new Map();
 
+/**
+ * wait(id) -> Promise<Reply>
+ * id must be a non-empty string, else TypeError starting "hold.wait: ".
+ * If something already waits for id, throw Error starting "hold.wait: ".
+ */
 export function wait(id) {
   if (typeof id !== "string" || id.length === 0) {
     throw new TypeError("hold.wait: id must be a non-empty string");
