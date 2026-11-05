@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { FACES, YAW, CAMERA, ROLL_PAD, TABLE_R, DIE } from "../../../../../../common/index.mjs";
+import { mat3ToMatrix4, worldToRowNormal, visibleFaces, FACE_ORDER } from "./math.mjs";
 
 // pip positions for die face values 1-6 (fractional 0..1)
 const PIPS = {
@@ -11,8 +12,6 @@ const PIPS = {
   6: [[0.25, 0.75], [0.75, 0.75], [0.25, 0.5], [0.75, 0.5], [0.25, 0.25], [0.75, 0.25]],
 };
 
-const FACE_ORDER = ["+x", "-x", "+y", "-y", "+z", "-z"];
-
 let renderer, scene, camera, tableMesh, diceObjects, rollPadMesh, noticeEl;
 let canvasEl, seat;
 let animating = false;
@@ -22,6 +21,7 @@ let noticeTimer = null;
 let rafId = null;
 let firstPlayDone = false;
 let playStart = 0;
+let posesById = {};
 
 function makeFaceTexture(value) {
   const c = document.createElement("canvas");
@@ -48,15 +48,6 @@ function makeDieMesh(id) {
   mesh.userData = { id };
   mesh.visible = false;
   return mesh;
-}
-
-function mat3ToMatrix4(m) {
-  const e = new Float64Array(16);
-  e[0] = m[0][0]; e[1] = m[0][1]; e[2] = m[0][2]; e[3] = 0;
-  e[4] = m[1][0]; e[5] = m[1][1]; e[6] = m[1][2]; e[7] = 0;
-  e[8] = m[2][0]; e[9] = m[2][1]; e[10] = m[2][2]; e[11] = 0;
-  e[12] = 0; e[13] = 0; e[14] = 0; e[15] = 1;
-  return new THREE.Matrix4().fromArray(e);
 }
 
 function init({ canvas, seat: s }) {
@@ -87,11 +78,11 @@ function init({ canvas, seat: s }) {
   );
   camera.updateMatrixWorld();
 
-  // table: flat dark-green plane at y=0
-  const tgeom = new THREE.PlaneGeometry(TABLE_R * 2, TABLE_R * 2);
+  // table: flat dark-green plane at y=0, rotated -π/2 about x, large enough to hold every row and the pad
+  const tgeom = new THREE.PlaneGeometry(20, 20);
   tableMesh = new THREE.Mesh(tgeom, new THREE.MeshBasicMaterial({ color: 0x1a4d2e }));
   tableMesh.position.set(0, 0, 0);
-  tableMesh.rotation.set(0, 0, 0);
+  tableMesh.rotation.set(-Math.PI / 2, 0, 0);
   scene.add(tableMesh);
 
   // 16 dice
@@ -137,6 +128,7 @@ function init({ canvas, seat: s }) {
   tracks = [];
   noticeText = null;
   firstPlayDone = false;
+  posesById = {};
 
   (function loop() {
     rafId = requestAnimationFrame(loop);
@@ -161,21 +153,19 @@ function play(tracksInput, poses) {
   playStart = performance.now();
   tracks = tracksInput || [];
 
-  const states = [];
-  for (let i = 0; i < 16; i++) states[i] = { trackId: null };
+  posesById = {};
+  for (const p of poses) posesById[p.id] = p;
 
-  for (const tr of tracks) {
-    states[tr.id].trackId = tr.id;
-  }
+  const trackById = {};
+  for (const tr of tracks) trackById[tr.id] = tr;
 
   for (let i = 0; i < 16; i++) {
     diceObjects[i].visible = true;
-    const st = states[i];
-    if (st.trackId !== null) {
-      const tr = tracks.find((t) => t.id === i);
+    const tr = trackById[i];
+    if (tr) {
       setDiePose(diceObjects[i], tr.from.position, tr.from.matrix);
     } else {
-      setDiePose(diceObjects[i], poses[i].position, poses[i].matrix);
+      setDiePose(diceObjects[i], posesById[i].position, posesById[i].matrix);
     }
   }
 
@@ -196,7 +186,10 @@ function tickTracks() {
     const ms = tr.ms || 0;
     const spin = tr.spin || 0;
     const elapsed = now - playStart;
-    if (elapsed < delay) continue;
+    if (elapsed < delay) {
+      still = true;
+      continue;
+    }
     const t = Math.min(1, (elapsed - delay) / ms);
     if (t < 1) still = true;
 
@@ -225,7 +218,7 @@ function tickTracks() {
 
 function notice(reply) {
   if (noticeTimer) clearTimeout(noticeTimer);
-  if (!reply || reply.ok === false) {
+  if (reply && reply.ok === false) {
     noticeText = reply.reason;
     noticeEl.style.display = "block";
     noticeEl.textContent = reply.reason;
@@ -237,18 +230,6 @@ function notice(reply) {
     noticeText = null;
     noticeEl.style.display = "none";
   }
-}
-
-function worldToRowNormal(wn, owner) {
-  const yaw = YAW[owner];
-  const r = [0, 0, 0];
-  for (let i = 0; i < 3; i++) {
-    r[i] = yaw[0][i] * wn.x + yaw[1][i] * wn.y + yaw[2][i] * wn.z;
-  }
-  const abs = [Math.abs(r[0]), Math.abs(r[1]), Math.abs(r[2])];
-  const ax = abs[0] >= abs[1] && abs[0] >= abs[2] ? 0 : (abs[1] >= abs[2] ? 1 : 2);
-  const sign = r[ax] >= 0 ? 1 : -1;
-  return (sign > 0 ? "+" : "-") + "xyz"[ax];
 }
 
 function pick({ x, y }) {
@@ -271,8 +252,11 @@ function pick({ x, y }) {
       bestRoll = it.distance;
     } else if (ud.id !== undefined) {
       if (!bestDie || it.distance < bestDie.dist) {
+        const mesh = diceObjects[ud.id];
         const owner = Math.floor(ud.id / 4);
-        bestDie = { id: ud.id, normal: worldToRowNormal(it.normal, owner), dist: it.distance };
+        const worldNormal = it.normal.clone().transformDirection(mesh.matrixWorld);
+        const normal = worldToRowNormal(worldNormal, owner);
+        bestDie = { id: ud.id, normal, dist: it.distance };
       }
     }
   }
@@ -303,25 +287,10 @@ function describe() {
     const mesh = diceObjects[i];
     const pos = mesh.position;
     const pr = projectToCanvas(pos);
-    let visibleFaces = [];
-    const mw = mesh.matrixWorld.elements;
-    const me = [mw[0], mw[1], mw[2], mw[3], mw[4], mw[5], mw[6], mw[7], mw[8]];
-    const normals = {
-      "+x": [me[0], me[3], me[6]],
-      "-x": [-me[0], -me[3], -me[6]],
-      "+y": [me[1], me[4], me[7]],
-      "-y": [-me[1], -me[4], -me[7]],
-      "+z": [me[2], me[5], me[8]],
-      "-z": [-me[2], -me[5], -me[8]],
-    };
-    const eyeVec = [CAMERA.eye[0] - pos.x, CAMERA.eye[1] - pos.y, CAMERA.eye[2] - pos.z];
-    for (const face of FACE_ORDER) {
-      const n = normals[face];
-      const dot = n[0] * eyeVec[0] + n[1] * eyeVec[1] + n[2] * eyeVec[2];
-      if (dot > 0) visibleFaces.push(FACES[face]);
-    }
-    visibleFaces.sort((a, b) => a - b);
-    dice.push({ id: i, x: pr ? pr.x : 0, y: pr ? pr.y : 0, visibleFaces });
+    // find the pose for this die id to compute visible faces
+    const pose = posesById[i];
+    const faces = pose ? visibleFaces(pose, seat) : [];
+    dice.push({ id: i, x: pr ? pr.x : 0, y: pr ? pr.y : 0, visibleFaces: faces });
   }
   const rollPos = rollPadMesh.position;
   const rollPr = projectToCanvas(rollPos);
