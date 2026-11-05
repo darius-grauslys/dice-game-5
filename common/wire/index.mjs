@@ -7,10 +7,22 @@ export const ROUTES = Object.freeze({
   client: "/client.js",
   action: "/action",
   events: "/events",
+  music: "/music.json",
+  assets: "/assets/",
 });
 
 export const PAGE =
   '<!doctype html><meta charset="utf-8"><title>dice</title><style>html,body{margin:0;background:#1d2b24}canvas{display:block}</style><canvas width="800" height="600"></canvas><script type="module" src="/client.js"></script>';
+
+export function pageFor(seed) {
+  if (typeof seed !== "number" || !Number.isInteger(seed) || seed < 0) {
+    throw new TypeError("pageFor: seed must be an integer >= 0");
+  }
+  return PAGE.replace(
+    '<meta charset="utf-8">',
+    '<meta charset="utf-8"><meta name="dice-seed" content="' + seed + '">'
+  );
+}
 
 export function encodeEvent(message) {
   if (!(message && typeof message === "object" && message.kind === "message")) {
