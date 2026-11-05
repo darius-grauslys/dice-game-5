@@ -70,8 +70,8 @@ export function init({ canvas, seat: s }) {
   bannerEl.style.fontSize = "28px";
   bannerEl.style.fontWeight = "bold";
   bannerEl.style.width = canvasRect.width + "px";
-  bannerEl.style.left = "0px";
-  bannerEl.style.top = "-" + (canvasRect.height + 60) + "px";
+  bannerEl.style.left = canvasRect.left + "px";
+  bannerEl.style.top = canvasRect.top + "px";
 
   windowEl = document.createElement("div");
   windowEl.className = "hud-window";
@@ -141,19 +141,21 @@ function processBanners() {
   bannerEl.textContent = b.text;
   bannerEl.style.color = b.colour;
   bannerEl.style.display = "";
+  const h = bannerEl.offsetHeight;
   bannerEl.style.transition = "top 400ms";
-  bannerEl.style.top = "-" + (bannerEl.offsetHeight + 20) + "px";
+  bannerEl.style.top = (canvasRect.top - h - 20) + "px";
   bannerEl.offsetHeight;
-  bannerEl.style.top = "0px";
-  bannerTimer = setTimeout(() => {
-    bannerTimer = setTimeout(() => {
+  bannerEl.style.top = canvasRect.top + "px";
+  const slideDownDone = setTimeout(() => {
+    const stayDone = setTimeout(() => {
       bannerEl.style.transition = "top 400ms";
-      bannerEl.style.top = "-" + (bannerEl.offsetHeight + 20) + "px";
-      setTimeout(() => {
+      bannerEl.style.top = (canvasRect.top - h - 20) + "px";
+      const slideUpDone = setTimeout(() => {
         bannerEl.style.display = "none";
         bannerTimer = null;
         processBanners();
       }, 400);
     }, 3000);
   }, 400);
+  bannerTimer = slideDownDone;
 }
