@@ -31,6 +31,15 @@ test("network.initNetwork: server returns Up with poll and emit", async () => {
   await close();
 });
 
+test("network.initNetwork: server with seed returns Up with poll and emit", async () => {
+  await close();
+  const up = await initNetwork({ role: "server", port: 0, seed: 42 });
+  assert.ok(up && up.kind === "up");
+  assert.strictEqual(typeof up.poll, "function");
+  assert.strictEqual(typeof up.emit, "function");
+  await close();
+});
+
 test("network.initNetwork: client returns Up with poll and emit", async () => {
   await close();
   const up = await initNetwork({ role: "client", origin: "http://127.0.0.1:8080" });

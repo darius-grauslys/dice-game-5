@@ -7,7 +7,7 @@ export async function initNetwork(opts) {
   const role = opts?.role;
   if (role === "server") {
     if (started.server) throw new Error("network.initNetwork: server already started");
-    const up = await serve.start({ host: opts.host ?? "127.0.0.1", port: opts.port });
+    const up = await serve.start({ host: opts.host ?? "127.0.0.1", port: opts.port, seed: opts.seed ?? 0 });
     started.server = true;
     return up;
   } else if (role === "client") {
