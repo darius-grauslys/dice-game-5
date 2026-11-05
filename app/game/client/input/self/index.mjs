@@ -1,13 +1,14 @@
-export const _sheo_stub = true;
+import * as pointer from "../../../../../edges/input/input_to_pointer.mjs";
+import * as intent from "../../../../../edges/input/input_to_intent.mjs";
 
 export function init({ canvas }) {
-  throw new Error("stub: input.init");
+  pointer.init({ canvas });
 }
 
 export function drain() {
-  throw new Error("stub: input.drain");
+  return pointer.drain();
 }
 
 export function toAction(gesture, hit, game, seat) {
-  throw new Error("stub: input.toAction");
+  return intent.toAction(gesture, hit, game, seat);
 }
