@@ -44,7 +44,7 @@ export function init(scene) {
     removeEventListener: function () {},
   };
   const material = new THREE.PointsMaterial({
-    color: "#ffffff",
+    color: "#ffd84a",
     size: 1,
     opacity: 1,
     depthWrite: false,
@@ -91,7 +91,7 @@ function makeSparkler(anchor) {
   const phi = Math.acos(2 * Math.random() - 1);
   const vx = speed * Math.sin(phi) * Math.cos(theta);
   const vy = speed * Math.sin(phi) * Math.sin(theta);
-  const vz = speed * Math.cos(phi);
+  const vz = speed * Math.sin(phi) * Math.cos(phi);
   const life = 600 + Math.random() * 600;
   const isGold = Math.random() < 0.7;
   const size = 12 + Math.random() * 8;
