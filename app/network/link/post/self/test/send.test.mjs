@@ -89,3 +89,20 @@ test("send rejects a 500 response with body text", async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("send rejects a 200 non-JSON body with a TypeError starting post.send: ", async () => {
+  const action = Action({ id: "a1", seat: 0, move: "turn", axis: "x", dir: 1, version: 0 });
+  const { server, port } = await startServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end("not json");
+  });
+  try {
+    const origin = `http://127.0.0.1:${port}`;
+    await assert.rejects(
+      () => send(origin, action),
+      /^TypeError: post\.send: /,
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

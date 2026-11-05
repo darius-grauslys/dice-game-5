@@ -10,7 +10,12 @@ export async function send(origin, action) {
     const text = await res.text();
     throw new Error(`post.send: HTTP ${res.status}: ${text}`);
   }
-  const reply = fromJSON(await res.text());
+  let reply;
+  try {
+    reply = fromJSON(await res.text());
+  } catch (e) {
+    throw new TypeError(`post.send: ${e.message}`);
+  }
   if (!(reply && reply.kind === "reply")) {
     throw new TypeError("post.send: expected a Reply");
   }
