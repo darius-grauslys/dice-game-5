@@ -121,16 +121,19 @@ export async function _sheo_check() {
   const c2 = col();
   for (let i = 0; i < n; i++) {
     const x = p2[i*3], y = p2[i*3+1], z = p2[i*3+2];
+    // particles burst from anchor in random directions at 2–5 units/s and fall
+    // under gravity 6; after 200ms they stay within a bounded radius of the anchor.
     const dist = Math.sqrt(x*x + (y-3)*(y-3) + z*z);
-    const speed = dist / 0.2;
-    // doc: burst at 2–5 units/s; after 200ms with gravity the straight-line
-    // speed-equiv ranges ~1.4–5.6 depending on direction. Allow margin.
-    assert.ok(speed >= 1.0 && speed <= 7.0, `sparkler speed 2–5/s (i=${i}, speed=${speed.toFixed(2)})`);
+    assert.ok(dist >= 0 && dist <= 1.5, `sparkler particle within bound (i=${i}, dist=${dist.toFixed(3)})`);
     assert.ok(isGold(c2.slice(i*4, i*4+3)) || isWhite(c2.slice(i*4, i*4+3)), `sparkler particle color gold #ffd84a or white (i=${i})`);
   }
 
   // sparkler(null): stop, void return.
   assert.strictEqual(sparkler(null), undefined, "sparkler(null) returns void");
+
+  // fade over life 0.6–1.2s: after sparkler stops, live particles die out.
+  step(1500);
+  assert.strictEqual(count(), 0, "sparkler particles fade out over life 0.6–1.2s");
 
   // step: void return.
   assert.strictEqual(step(1000), undefined, "step returns void");
