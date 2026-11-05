@@ -47,6 +47,7 @@ export function init(scene) {
     color: "#ffffff",
     size: 1,
     opacity: 1,
+    depthWrite: false,
   });
   material.tangent = new THREE.Vector3(0, 0, 0);
   material.uniforms = { tangent: new THREE.Vector3(0, 0, 0) };
