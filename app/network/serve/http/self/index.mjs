@@ -19,7 +19,10 @@ export async function listen({ host, port, routes }) {
   });
 
   return new Promise((resolve, reject) => {
-    server.on("error", (err) => reject(err));
+    server.on("error", (err) => {
+      server = null;
+      reject(err);
+    });
     server.listen(port, host, () => {
       const addr = server.address();
       resolve({ port: addr.port });
@@ -54,19 +57,24 @@ async function handleRequest(req, res, routes) {
         "cache-control": "no-store",
         "connection": "keep-alive",
       });
+      res.flushHeaders();
       const sock = req.socket || req.connection;
       const closed = new Promise((resolve) => {
         if (sock) sock.on("close", resolve);
         else resolve();
       });
-      r.stream((text) => res.write(text), closed);
+      await r.stream((text) => res.write(text), closed);
     } else {
       res.writeHead(r.status, { "content-type": r.type, "cache-control": "no-store" });
       res.end(r.body);
     }
   } catch (e) {
-    res.writeHead(500, { "content-type": "text/plain", "cache-control": "no-store" });
-    res.end(String(e.message));
+    if (res.headersSent) {
+      res.end();
+    } else {
+      res.writeHead(500, { "content-type": "text/plain", "cache-control": "no-store" });
+      res.end(String(e.message));
+    }
   }
 }
 
