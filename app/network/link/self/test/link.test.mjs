@@ -4,23 +4,29 @@ import http from "node:http";
 
 import { start, close } from "../index.mjs";
 
-test("start rejects a non-http origin", () => {
-  assert.throws(
+test("start rejects a non-http origin", async () => {
+  await assert.rejects(
     () => start({ origin: "ftp://example.com" }),
     /^TypeError: link\.start: /,
   );
-  assert.throws(
+  await assert.rejects(
     () => start({ origin: "not a url" }),
     /^TypeError: link\.start: /,
   );
-  assert.throws(
+  await assert.rejects(
     () => start({}),
     /^TypeError: link\.start: /,
   );
-  assert.throws(
+  await assert.rejects(
     () => start({ origin: 123 }),
     /^TypeError: link\.start: /,
   );
+});
+
+test("start returns a Promise that rejects (doesn't throw when called)", async () => {
+  const p = start({ origin: "ftp://x" });
+  assert.ok(p instanceof Promise);
+  await assert.rejects(() => p, /^TypeError: link\.start: /);
 });
 
 test("start returns an Up with poll and emit", async () => {
@@ -35,6 +41,16 @@ test("poll returns [] when queue empty and wait is false", async () => {
   const up = await start({ origin: "http://127.0.0.1:1" });
   const msgs = await up.poll({ wait: false });
   assert.deepStrictEqual(msgs, []);
+  await close();
+});
+
+test("close before any start resolves", async () => {
+  await close();
+});
+
+test("close twice after a start resolves both times", async () => {
+  await start({ origin: "http://127.0.0.1:1" });
+  await close();
   await close();
 });
 
