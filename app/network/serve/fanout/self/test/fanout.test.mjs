@@ -110,3 +110,17 @@ test("reset forgets subscribers and last text, restarts tokens at 1", () => {
   fanout.join((t) => received.push(t));
   assert.deepStrictEqual(received, []); // no catch-up after reset
 });
+
+test("publish: a leave during publish does not skip the next subscriber", () => {
+  fanout.reset();
+  const calls = [];
+  const a = fanout.join((t) => { calls.push("A"); fanout.leave(a); });
+  fanout.join((t) => calls.push("B"));
+  fanout.join((t) => calls.push("C"));
+  const n1 = fanout.publish("x");
+  assert.strictEqual(n1, 3);
+  assert.deepStrictEqual(calls, ["A", "B", "C"]);
+  const n2 = fanout.publish("y");
+  assert.strictEqual(n2, 2);
+  assert.deepStrictEqual(calls, ["A", "B", "C", "B", "C"]);
+});

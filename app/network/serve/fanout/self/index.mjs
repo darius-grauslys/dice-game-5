@@ -40,7 +40,8 @@ export function publish(text) {
   hasPublished = true;
   let succeeded = 0;
   const toRemove = [];
-  for (const token of order) {
+  const snapshot = order.slice();
+  for (const token of snapshot) {
     const send = subs.get(token);
     if (!send) continue;
     try {
