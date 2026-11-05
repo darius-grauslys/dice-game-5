@@ -7,21 +7,21 @@ export function toAction(gesture, hit, game, seat) {
   const id = `${seat}:${game.version}`;
   const version = game.version;
 
-  if (gesture.type === "press") {
-    if (hit.kind === "roll") {
+  if (gesture.kind === "press") {
+    if (hit !== null && hit.kind === "roll") {
       return Action({ id, seat, move: "roll", axis: null, dir: null, version });
     }
     return null;
   }
 
-  if (gesture.type === "drag") {
-    if (hit.kind !== "die") return null;
+  if (gesture.kind === "drag") {
+    if (hit === null || hit.kind !== "die") return null;
     const groups = game.players[seat].queue.groups;
     const rightmost = groups[groups.length - 1];
     const dieIds = rightmost.dice.map((d) => d.id);
     if (!dieIds.includes(hit.id)) return null;
-    const dx = hit.to.x - hit.at.x;
-    const dy = hit.to.y - hit.at.y;
+    const dx = gesture.to.x - gesture.at.x;
+    const dy = gesture.to.y - gesture.at.y;
     if (Math.max(Math.abs(dx), Math.abs(dy)) < DRAG_MIN) return null;
     let direction;
     if (Math.abs(dx) >= Math.abs(dy)) {
