@@ -1,9 +1,30 @@
-export const _sheo_stub = true;
+import * as server from "../../../edges/game/game_to_server.mjs";
+import * as client from "../../../edges/game/game_to_client.mjs";
+
+let _role = null;
+let _initialized = false;
 
 export async function initGame(opts, up) {
-  throw new Error("stub: game.initGame");
+  const role = opts && opts.role;
+  if (role === "server") {
+    _role = "server";
+    await server.init({ seed: opts.seed }, up);
+  } else if (role === "client") {
+    _role = "client";
+    await client.init({ seat: opts.seat, canvas: opts.canvas }, up);
+  } else {
+    throw new TypeError("game.initGame: opts.role must be 'server' or 'client'");
+  }
+  _initialized = true;
 }
 
 export async function begin() {
-  throw new Error("stub: game.begin");
+  if (!_initialized) {
+    throw new Error("game.begin: not initialised");
+  }
+  if (_role === "server") {
+    return server.begin();
+  } else {
+    return client.begin();
+  }
 }
