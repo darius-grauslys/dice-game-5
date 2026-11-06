@@ -16,6 +16,7 @@ import {
   FACES,
   ORIENTATIONS,
   TURN,
+  facesFor,
 } from "../../../../common/index.mjs";
 import * as turn from "../../../../edges/server/server_to_turn.mjs";
 import * as roll from "../../../../edges/server/server_to_roll.mjs";
@@ -36,7 +37,7 @@ function buildBlankGame(seed) {
     const queue = Queue({ groups });
     players.push(Player({ seat: s, queue }));
   }
-  return Game({ players, turn: 0, version: 0, rng: Rng.seed(seed), last: null, winner: null });
+  return Game({ players, turn: 0, version: 0, rng: Rng.seed(seed), last: null, winner: null, faces: facesFor(seed) });
 }
 
 export async function init({ seed }, up) {

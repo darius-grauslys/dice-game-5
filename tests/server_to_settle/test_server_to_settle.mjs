@@ -7,25 +7,9 @@ import {
   Die,
   Last,
   Action,
-  ORIENTATIONS,
+  look,
 } from "../../common/index.mjs";
 import * as real from "../../edges/server/server_to_settle.mjs";
-
-function die(id, o = 0) {
-  return Die({ id, o });
-}
-
-function group(dice) {
-  return Group({ dice });
-}
-
-function queue(groups) {
-  return Queue({ groups });
-}
-
-function player(seat, groups) {
-  return Player({ seat, queue: queue(groups) });
-}
 
 function isGame(g) {
   return (
@@ -42,9 +26,11 @@ function isSeat(s) {
   return typeof s === "number" && Number.isInteger(s) && s >= 0 && s <= 3;
 }
 
-function keyOf(d) {
-  return ORIENTATIONS[d.o].key;
-}
+// A drop-in for the forwarder: each function wraps the real call.
+// A) check its arguments against the doc, and throw an Error naming the function if wrong;
+// B) call the function through "../../edges/server/server_to_settle.mjs" (imported as * as real);
+// C) check that it returned;
+// D) check the return value against the doc (shape and content, as far as the doc says).
 
 export function apply(game, seat) {
   if (!isGame(game)) throw new Error("apply: game must be a game");
@@ -78,126 +64,64 @@ export function regroup(game, seat) {
   return result;
 }
 
-function buildGame(players, change) {
-  let action;
-  if (change === "deal") action = null;
-  else action = Action({
-    id: "a1",
-    seat: 0,
-    move: change,
-    axis: change === "turn" ? "x" : null,
-    dir: change === "turn" ? 1 : null,
-    version: 0,
-  });
-  const last = Last({ action, change, dice: [0], before: [0] });
-  return Game({ players, turn: 0, version: 0, rng: 1, last, winner: null });
-}
+const mk = (seat, groups) => Player({ seat, queue: Queue({ groups: groups.map((g) => Group({ dice: g.map(([id, o]) => Die({ id, o })) })) }) });
+const NUMBERED = [[2, 3, 4, 5, 6, 1], [1, 2, 3, 4, 5, 6], [1, 2, 3, 4, 5, 6], [1, 2, 3, 4, 5, 6]]; // seat 0 numbered [2, 3, 4, 5, 6, 1]: its face 1 shows 2 pips, ...
+const others = [mk(1, [[[4, 0]], [[5, 0]], [[6, 0]], [[7, 0]]]), mk(2, [[[8, 0]], [[9, 0]], [[10, 0]], [[11, 0]]]), mk(3, [[[12, 0]], [[13, 0]], [[14, 0]], [[15, 0]]])];
+const at = (groups, faces, last = null) => Game({ players: [mk(0, groups), ...others], turn: 0, version: 1, rng: 7, last, winner: null, faces });
 
-function queueDice(q) {
-  return q.groups.map((g) => g.dice.map((d) => d.id));
-}
+const lastTurn = Last({ action: Action({ id: "0:1", seat: 0, move: "turn", axis: "x", dir: 1, version: 1 }), change: "turn", dice: [2, 3], before: [0, 0] });
+const lastRoll = Last({ action: Action({ id: "0:1", seat: 0, move: "roll", axis: null, dir: null, version: 1 }), change: "roll", dice: [3], before: [0] });
+
+const groupsOf = (g) => g.players[0].queue.groups.map((grp) => grp.dice.map((d) => [d.id, d.o]));
 
 export async function _sheo_check() {
-  // a valid game for argument checks
-  const baseP0 = player(0, [group([die(0, 0), die(1, 9), die(2, 2), die(3, 0)])]);
-  const baseP1 = player(1, [group([die(4), die(5), die(6), die(7)])]);
-  const baseP2 = player(2, [group([die(8), die(9), die(10), die(11)])]);
-  const baseP3 = player(3, [group([die(12), die(13), die(14), die(15)])]);
-  const game = buildGame([baseP0, baseP1, baseP2, baseP3], "roll");
-
-  // --- apply: Move + Break (roll) + Split + Merge ---
+  // --- look: how dice look to their owner by their owner's numbering ---
   {
-    const p0 = player(0, [
-      group([die(0, 0), die(2, 2)]),
-      group([die(4, 0), die(6, 2)]),
-    ]);
-    const p1 = player(1, [group([die(1), die(3), die(5), die(7)])]);
-    const p2 = player(2, [group([die(8), die(9), die(10), die(11)])]);
-    const p3 = player(3, [group([die(12), die(13), die(14), die(15)])]);
-    const game = buildGame([p0, p1, p2, p3], "roll");
-
-    const out = apply(game, 0);
-    const q = out.players[0].queue;
-    assert.deepStrictEqual(queueDice(q), [
-      [4, 0],
-      [6, 2],
-    ]);
-    // keys: group 0 all "1", group 1 all "4"
-    assert.strictEqual(keyOf(q.groups[0].dice[0]), "1");
-    assert.strictEqual(keyOf(q.groups[0].dice[1]), "1");
-    assert.strictEqual(keyOf(q.groups[1].dice[0]), "4");
-    assert.strictEqual(keyOf(q.groups[1].dice[1]), "4");
+    const perm = NUMBERED[0];
+    // numbered [2,3,4,5,6,1]: o 0 and o 9 both have face 1 on top (2 pips), turned a quarter apart: not alike.
+    assert.strictEqual(look(perm, 0), "2:45");
+    assert.strictEqual(look(perm, 9), "2:36");
+    assert.notStrictEqual(look(perm, 0), look(perm, 9));
+    // o 3 and o 10 have face 6 on top (keys 6b, 6a), which shows 1 pip: alike.
+    assert.strictEqual(look(perm, 3), "1");
+    assert.strictEqual(look(perm, 10), "1");
+    assert.strictEqual(look(perm, 3), look(perm, 10));
+    // With faces null it's the other way round: o 0 and o 9 alike.
+    assert.strictEqual(look(null, 0), "1");
+    assert.strictEqual(look(null, 9), "1");
+    assert.strictEqual(look(null, 0), look(null, 9));
   }
 
-  // --- apply: Move + no Break (turn) + Split + Merge (no split needed) ---
+  // Golden: regroup, seat 0 numbered [2,3,4,5,6,1]
   {
-    const p0 = player(0, [
-      group([die(0, 0), die(1, 9)]),
-      group([die(2, 2)]),
-    ]);
-    const p1 = player(1, [group([die(3), die(4), die(5), die(6)])]);
-    const p2 = player(2, [group([die(7), die(8), die(9), die(10)])]);
-    const p3 = player(3, [group([die(11), die(12), die(13), die(14), die(15)])]);
-    const game = buildGame([p0, p1, p2, p3], "turn");
-
-    const out = apply(game, 0);
-    const q = out.players[0].queue;
-    // Move: [G([d2]), G([d0,d1])]; no break (turn); no split; merge keeps order.
-    assert.deepStrictEqual(queueDice(q), [
-      [2],
-      [0, 1],
-    ]);
-    assert.strictEqual(keyOf(q.groups[0].dice[0]), "4");
-    assert.strictEqual(keyOf(q.groups[1].dice[0]), "1");
-    assert.strictEqual(keyOf(q.groups[1].dice[1]), "1");
+    const g = at([[[0, 0]], [[1, 9]], [[2, 3]], [[3, 10]]], NUMBERED);
+    const r = regroup(g, 0);
+    assert.deepStrictEqual(groupsOf(r), [[[0, 0]], [[1, 9]], [[2, 3], [3, 10]]]);
   }
 
-  // --- regroup: Split + Merge (after deal, no move/break) ---
+  // Golden: regroup, the same dice, faces null
   {
-    const p0 = player(0, [
-      group([die(0, 0), die(2, 2)]),
-      group([die(4, 0), die(6, 2)]),
-    ]);
-    const p1 = player(1, [group([die(1), die(3), die(5), die(7)])]);
-    const p2 = player(2, [group([die(8), die(9), die(10), die(11)])]);
-    const p3 = player(3, [group([die(12), die(13), die(14), die(15)])]);
-    const game = buildGame([p0, p1, p2, p3], "deal");
-
-    const out = regroup(game, 0);
-    const q = out.players[0].queue;
-    // Split: G([d0,d2])->[G(d0),G(d2)], G([d4,d6])->[G(d4),G(d6)]
-    // Merge: d0 key1, d2 key4, d4 key1->append to d0, d6 key4->append to d2
-    assert.deepStrictEqual(queueDice(q), [
-      [0, 4],
-      [2, 6],
-    ]);
-    assert.strictEqual(keyOf(q.groups[0].dice[0]), "1");
-    assert.strictEqual(keyOf(q.groups[0].dice[1]), "1");
-    assert.strictEqual(keyOf(q.groups[1].dice[0]), "4");
-    assert.strictEqual(keyOf(q.groups[1].dice[1]), "4");
+    const g = at([[[0, 0]], [[1, 9]], [[2, 3]], [[3, 10]]], null);
+    const r = regroup(g, 0);
+    assert.deepStrictEqual(groupsOf(r), [[[0, 0], [1, 9]], [[2, 3]], [[3, 10]]]);
   }
 
-  // --- regroup: no split, no merge changes ---
+  // Golden: apply after a turn, numbered
   {
-    const p0 = player(0, [
-      group([die(0, 0), die(1, 9)]),
-      group([die(2, 2)]),
-    ]);
-    const p1 = player(1, [group([die(3), die(4), die(5), die(6)])]);
-    const p2 = player(2, [group([die(7), die(8), die(9), die(10)])]);
-    const p3 = player(3, [group([die(11), die(12), die(13), die(14), die(15)])]);
-    const game = buildGame([p0, p1, p2, p3], "deal");
-
-    const out = regroup(game, 0);
-    const q = out.players[0].queue;
-    assert.deepStrictEqual(queueDice(q), [
-      [0, 1],
-      [2],
-    ]);
-    assert.strictEqual(keyOf(q.groups[0].dice[0]), "1");
-    assert.strictEqual(keyOf(q.groups[0].dice[1]), "1");
-    assert.strictEqual(keyOf(q.groups[1].dice[0]), "4");
+    const g = at([[[0, 3]], [[1, 0]], [[2, 20], [3, 10]]], NUMBERED, lastTurn);
+    const r = apply(g, 0);
+    assert.deepStrictEqual(groupsOf(r), [[[2, 20], [1, 0]], [[3, 10], [0, 3]]]);
   }
+
+  // Golden: apply after a roll, numbered
+  {
+    const g = at([[[0, 3]], [[1, 0], [2, 9]], [[3, 20]]], NUMBERED, lastRoll);
+    const r = apply(g, 0);
+    assert.deepStrictEqual(groupsOf(r), [[[3, 20], [1, 0]], [[0, 3]], [[2, 9]]]);
+  }
+
+  // A valid game for argument checks
+  const game = at([[[0, 0]], [[1, 9]], [[2, 3]], [[3, 10]]], NUMBERED);
 
   // --- argument checks ---
   assert.throws(() => apply({}, 0), /^Error: apply: game must be a game/);

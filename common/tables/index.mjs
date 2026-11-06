@@ -1,7 +1,13 @@
-// common/tables: the die's 24 orientations and the quarter-turn table.
+// common/tables: the die's 24 orientations, the quarter-turn table, and the
+// die-numbering helpers facesFor, faces and look.
 //
-// Pure: no imports, no IO, no time, no randomness. Computed once when the
-// module loads, then deeply frozen.
+// FACES, ORIENTATIONS and TURN are computed once when the module loads, then
+// deeply frozen. facesFor, faces and look are pure functions: no IO, no time,
+// no randomness. They import Rng from ../rng/index.mjs and FACE_PERMS from
+// ../view/index.mjs.
+
+import { Rng } from "../rng/index.mjs";
+import { FACE_PERMS } from "../view/index.mjs";
 
 const facesObj = { "+x": 2, "-x": 5, "+y": 1, "-y": 6, "+z": 3, "-z": 4 };
 
@@ -126,3 +132,81 @@ for (let o = 0; o < 24; o++) {
 export const FACES = deepFreeze(facesObj);
 export const ORIENTATIONS = deepFreeze(orientations);
 export const TURN = deepFreeze(turn);
+
+// Numbering helpers: how dice look to their owner by their owner's numbering.
+
+function checkPerm(perm, fn) {
+  if (perm !== null) {
+    if (!Array.isArray(perm) || perm.length !== 6) {
+      throw new TypeError(`${fn}: perm must be null or an array of 6 integers`);
+    }
+    for (const x of perm) {
+      if (typeof x !== "number" || !Number.isInteger(x) || x < 1 || x > 6) {
+        throw new TypeError(`${fn}: perm must be a permutation of 1..6`);
+      }
+    }
+    const sorted = [...perm].sort((a, b) => a - b);
+    if (sorted.join(",") !== "1,2,3,4,5,6") {
+      throw new TypeError(`${fn}: perm must be a permutation of 1..6`);
+    }
+  }
+}
+
+function checkO(o, fn) {
+  if (!Number.isInteger(o) || o < 0 || o > 23) {
+    throw new TypeError(`${fn}: o must be an integer 0..23`);
+  }
+}
+
+function faces(perm, o) {
+  checkPerm(perm, "faces");
+  checkO(o, "faces");
+  const p = perm ?? [1, 2, 3, 4, 5, 6];
+  const M = ORIENTATIONS[o].matrix;
+  const Mt = [[M[0][0], M[1][0], M[2][0]], [M[0][1], M[1][1], M[2][1]], [M[0][2], M[1][2], M[2][2]]];
+  function dirFace(vec) {
+    const r = [Mt[0][0] * vec[0] + Mt[0][1] * vec[1] + Mt[0][2] * vec[2],
+               Mt[1][0] * vec[0] + Mt[1][1] * vec[1] + Mt[1][2] * vec[2],
+               Mt[2][0] * vec[0] + Mt[2][1] * vec[1] + Mt[2][2] * vec[2]];
+    let name;
+    if (r[0] === 1) name = "+x"; else if (r[0] === -1) name = "-x";
+    else if (r[1] === 1) name = "+y"; else if (r[1] === -1) name = "-y";
+    else if (r[2] === 1) name = "+z"; else if (r[2] === -1) name = "-z";
+    return p[FACES[name] - 1];
+  }
+  const result = {
+    top: dirFace([0, 1, 0]),
+    bottom: dirFace([0, -1, 0]),
+    front: dirFace([0, 0, 1]),
+    back: dirFace([0, 0, -1]),
+    left: dirFace([-1, 0, 0]),
+    right: dirFace([1, 0, 0]),
+  };
+  return Object.freeze(result);
+}
+
+function look(perm, o) {
+  checkPerm(perm, "look");
+  checkO(o, "look");
+  const f = faces(perm, o);
+  if ([1, 4, 5].includes(f.top)) return String(f.top);
+  const fronts = [f.front, f.back].sort((a, b) => a - b);
+  return `${f.top}:${fronts[0]}${fronts[1]}`;
+}
+
+function facesFor(seed) {
+  let r = Rng.seed(seed);
+  const drawn = new Set();
+  const perms = [];
+  for (let seat = 0; seat < 4; seat++) {
+    let k;
+    do {
+      [k, r] = Rng.int(r, 720);
+    } while (drawn.has(k));
+    drawn.add(k);
+    perms.push(Object.freeze(FACE_PERMS[k].slice()));
+  }
+  return Object.freeze(perms);
+}
+
+export { facesFor, faces, look };

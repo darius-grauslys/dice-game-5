@@ -48,6 +48,22 @@ test("near: 4 singles", () => {
   assert.strictEqual(near(at([[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]), 0), false);
 });
 
+test("near: one group of 4: 3 the same o, 1 a half turn off", () => {
+  assert.strictEqual(near(at([[[2, 0], [3, 20], [0, 0], [1, 0]]]), 0), true);
+});
+
+test("near: one group of 4: 3 the same o, 1 a quarter turn off", () => {
+  assert.strictEqual(near(at([[[0, 0], [1, 0], [2, 9], [3, 0]]]), 0), true);
+});
+
+test("near: one group of 4: 2 and 2", () => {
+  assert.strictEqual(near(at([[[0, 0], [1, 0], [2, 9], [3, 9]]]), 0), false);
+});
+
+test("near: one group of 4: all the same o (a win)", () => {
+  assert.strictEqual(near(at([[[0, 0], [1, 0], [2, 0], [3, 0]]]), 0), false);
+});
+
 test("near: seats 1..3 are false (four single dice)", () => {
   const g = at([[[0, 0], [1, 0], [2, 0]], [[3, 7]]]);
   assert.strictEqual(near(g, 1), false);
