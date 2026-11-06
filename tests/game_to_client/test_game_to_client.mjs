@@ -62,13 +62,23 @@ export async function _sheo_check() {
   };
   const up = Up({ poll, emit });
 
-  // Build a Game where it is seat 0's turn
+  // Build a Game where it is seat 0's turn.
+  // Seat 0's rightmost group must be a single die so a drag right yields a turn about y, dir 1.
   const players = [];
   for (let seat = 0; seat < 4; seat++) {
-    const dice = [];
-    for (let k = 0; k < 4; k++) dice.push(Die({ id: seat * 4 + k, o: 0 }));
-    const queue = Queue({ groups: [Group({ dice })] });
-    players.push(Player({ seat, queue }));
+    if (seat === 0) {
+      const d0 = Die({ id: 0, o: 0 });
+      const d1 = Die({ id: 1, o: 0 });
+      const d2 = Die({ id: 2, o: 0 });
+      const d3 = Die({ id: 3, o: 0 });
+      const queue = Queue({ groups: [Group({ dice: [d0, d1, d2] }), Group({ dice: [d3] })] });
+      players.push(Player({ seat, queue }));
+    } else {
+      const dice = [];
+      for (let k = 0; k < 4; k++) dice.push(Die({ id: seat * 4 + k, o: 0 }));
+      const queue = Queue({ groups: [Group({ dice })] });
+      players.push(Player({ seat, queue }));
+    }
   }
   const game0 = Game({ players, turn: 0, version: 0, rng: 1, last: null, winner: null });
 
