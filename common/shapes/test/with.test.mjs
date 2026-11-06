@@ -46,7 +46,7 @@ test("with accepts an empty patch and returns a fresh Game", () => {
   assert.notStrictEqual(g2, g);
   assert.deepStrictEqual(
     Object.keys(g2),
-    ["kind", "players", "turn", "version", "rng", "last", "winner"],
+    ["kind", "players", "turn", "version", "rng", "last", "winner", "faces"],
   );
 });
 

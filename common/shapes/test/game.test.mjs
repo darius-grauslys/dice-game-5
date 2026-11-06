@@ -14,6 +14,7 @@ test("Game builds a valid value", () => {
     "rng",
     "last",
     "winner",
+    "faces",
   ]);
   assert.strictEqual(g.kind, "game");
   assert.strictEqual(g.players, players);
@@ -22,7 +23,63 @@ test("Game builds a valid value", () => {
   assert.strictEqual(g.rng, 1);
   assert.strictEqual(g.last, null);
   assert.strictEqual(g.winner, null);
+  assert.strictEqual(g.faces, null);
   assert.ok(Object.isFrozen(g));
+});
+
+test("Game without faces has faces: null", () => {
+  const g = makeGame();
+  assert.strictEqual(g.faces, null);
+});
+
+test("Game keeps custom faces, deeply frozen", () => {
+  const faces = [
+    [5, 3, 6, 1, 4, 2],
+    [2, 3, 4, 5, 6, 1],
+    [1, 6, 3, 5, 4, 2],
+    [6, 5, 1, 4, 3, 2],
+  ];
+  const g = makeGame({ faces });
+  assert.deepStrictEqual(g.faces, faces);
+  assert.ok(Object.isFrozen(g.faces));
+  g.faces.forEach((n) => assert.ok(Object.isFrozen(n)));
+});
+
+test("with({turn: 1}) keeps faces", () => {
+  const faces = [
+    [5, 3, 6, 1, 4, 2],
+    [2, 3, 4, 5, 6, 1],
+    [1, 6, 3, 5, 4, 2],
+    [6, 5, 1, 4, 3, 2],
+  ];
+  const g = makeGame({ faces });
+  const g2 = g.with({ turn: 1 });
+  assert.deepStrictEqual(g2.faces, faces);
+});
+
+test("Game rejects bad faces", () => {
+  const bad = [
+    [[1, 2, 3, 4, 5, 6]], // 3 missing
+    [
+      [1, 2, 3, 4, 5, 5],
+      [1, 2, 3, 4, 5, 6],
+      [1, 2, 3, 4, 5, 6],
+      [1, 2, 3, 4, 5, 6],
+    ], // a repeat
+    [
+      [1, 2, 3, 4, 5, 7],
+      [1, 2, 3, 4, 5, 6],
+      [1, 2, 3, 4, 5, 6],
+      [1, 2, 3, 4, 5, 6],
+    ], // out of range
+    "x",
+  ];
+  for (const f of bad)
+    assert.throws(
+      () => makeGame({ faces: f }),
+      /^TypeError: Game\.faces: /,
+      `faces=${JSON.stringify(f)}`,
+    );
 });
 
 test("Game accepts a non-null last and winner", () => {
