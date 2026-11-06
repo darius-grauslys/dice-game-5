@@ -1,4 +1,4 @@
-import { PLAYERS, WIN } from "../../../../../common/index.mjs";
+import { PLAYERS, WIN, TURN } from "../../../../../common/index.mjs";
 
 let rollButton, bannerEl, windowEl, seat, canvasRect;
 let rollQueue = [];
@@ -6,14 +6,38 @@ let bannerTimer = null;
 let bannerQueue = [];
 let windowShown = false;
 
-function largest(game, p) {
-  let max = 0;
-  const player = game.players[p];
-  for (const g of player.queue.groups) {
-    const n = g.dice.length;
-    if (n > max) max = n;
+// near: whether the seat is close to winning.
+// True exactly when the seat's queue has exactly 2 groups, the dice of each
+// group all have the same o, and one group can be turned to the other's o.
+export function near(game, seat) {
+  const player = game.players[seat];
+  const groups = player.queue.groups;
+  if (groups.length !== 2) return false;
+
+  const oVals = groups.map((g) => {
+    const os = g.dice.map((d) => d.o);
+    const allSame = os.every((o) => o === os[0]);
+    return allSame ? os[0] : null;
+  });
+  if (oVals[0] === null || oVals[1] === null) return false;
+
+  const a = oVals[0];
+  const b = oVals[1];
+  const sizes = groups.map((g) => g.dice.length);
+
+  // A single die turns about any axis and reaches every orientation.
+  if (sizes[0] === 1 || sizes[1] === 1) return true;
+
+  // Two groups of 2 dice: only when one group's o is 1, 2 or 3 quarter turns
+  // about x from the other's.
+  if (sizes[0] === 2 && sizes[1] === 2) {
+    const t1 = TURN[a].x["1"];
+    const t2 = TURN[t1].x["1"];
+    const t3 = TURN[t2].x["1"];
+    return b === t1 || b === t2 || b === t3;
   }
-  return max;
+
+  return false;
 }
 
 export function rank(game) {
@@ -111,7 +135,7 @@ export function show(prev, next) {
   if (prev !== null) {
     const banners = [];
     for (let p = 0; p < 4; p++) {
-      if (largest(next, p) >= 3 && next.winner === null && largest(prev, p) < 3) {
+      if (near(next, p) && next.winner === null && !near(prev, p)) {
         banners.push({ p, text: `Player ${p + 1} is close to winning!`, colour: PLAYERS[p].colour });
       }
     }

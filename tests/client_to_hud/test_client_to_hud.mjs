@@ -2,57 +2,11 @@ import * as real from "../../edges/client/client_to_hud.mjs";
 import { Die, Group, Queue, Player, Game, WIN } from "../../common/index.mjs";
 import assert from "node:assert/strict";
 
-function die(id, o = 0) { return Die({ id, o }); }
+// --- golden helpers ---
 
-function makeFixtureGame() {
-  // seat 0: [[0,1], [2], [3]] -> largest 2, groups 1
-  // seat 1: [[4], [5], [6], [7]] -> largest 1, groups 0
-  // seat 2: [[8,9,10,11]] -> largest 4, groups 1
-  // seat 3: [[12], [13], [14], [15]] -> largest 1, groups 0
-  const players = [
-    Player({ seat: 0, queue: Queue({ groups: [Group({ dice: [die(0), die(1)] }), Group({ dice: [die(2)] }), Group({ dice: [die(3)] })] }) }),
-    Player({ seat: 1, queue: Queue({ groups: [Group({ dice: [die(4)] }), Group({ dice: [die(5)] }), Group({ dice: [die(6)] }), Group({ dice: [die(7)] })] }) }),
-    Player({ seat: 2, queue: Queue({ groups: [Group({ dice: [die(8), die(9), die(10), die(11)] })] }) }),
-    Player({ seat: 3, queue: Queue({ groups: [Group({ dice: [die(12)] }), Group({ dice: [die(13)] }), Group({ dice: [die(14)] }), Group({ dice: [die(15)] })] }) }),
-  ];
-  return Game({ players, turn: 0, version: 0, rng: 1, last: null, winner: null });
-}
-
-function makeTieGame() {
-  // seat 0: [[0,1], [2,3]] largest 2, groups 2
-  // seat 1: [[4,5], [6,7]] largest 2, groups 2
-  // seat 2: [[8,9,10,11]] largest 4, groups 1
-  // seat 3: [[12,13,14], [15]] largest 3, groups 1
-  const players = [
-    Player({ seat: 0, queue: Queue({ groups: [Group({ dice: [die(0), die(1)] }), Group({ dice: [die(2), die(3)] })] }) }),
-    Player({ seat: 1, queue: Queue({ groups: [Group({ dice: [die(4), die(5)] }), Group({ dice: [die(6), die(7)] })] }) }),
-    Player({ seat: 2, queue: Queue({ groups: [Group({ dice: [die(8), die(9), die(10), die(11)] })] }) }),
-    Player({ seat: 3, queue: Queue({ groups: [Group({ dice: [die(12), die(13), die(14)] }), Group({ dice: [die(15)] })] }) }),
-  ];
-  return Game({ players, turn: 0, version: 0, rng: 1, last: null, winner: null });
-}
-
-function makeBannerPrevGame() {
-  // seat 1's largest group is 2: [[4,5], [6], [7]]
-  const players = [
-    Player({ seat: 0, queue: Queue({ groups: [Group({ dice: [die(0)] }), Group({ dice: [die(1)] }), Group({ dice: [die(2)] }), Group({ dice: [die(3)] })] }) }),
-    Player({ seat: 1, queue: Queue({ groups: [Group({ dice: [die(4), die(5)] }), Group({ dice: [die(6)] }), Group({ dice: [die(7)] })] }) }),
-    Player({ seat: 2, queue: Queue({ groups: [Group({ dice: [die(8), die(9), die(10), die(11)] })] }) }),
-    Player({ seat: 3, queue: Queue({ groups: [Group({ dice: [die(12)] }), Group({ dice: [die(13)] }), Group({ dice: [die(14)] }), Group({ dice: [die(15)] })] }) }),
-  ];
-  return Game({ players, turn: 0, version: 0, rng: 1, last: null, winner: null });
-}
-
-function makeBannerNextGame() {
-  // seat 1's largest group is 3: [[4,5,6], [7]]
-  const players = [
-    Player({ seat: 0, queue: Queue({ groups: [Group({ dice: [die(0)] }), Group({ dice: [die(1)] }), Group({ dice: [die(2)] }), Group({ dice: [die(3)] })] }) }),
-    Player({ seat: 1, queue: Queue({ groups: [Group({ dice: [die(4), die(5), die(6)] }), Group({ dice: [die(7)] })] }) }),
-    Player({ seat: 2, queue: Queue({ groups: [Group({ dice: [die(8), die(9), die(10), die(11)] })] }) }),
-    Player({ seat: 3, queue: Queue({ groups: [Group({ dice: [die(12)] }), Group({ dice: [die(13)] }), Group({ dice: [die(14)] }), Group({ dice: [die(15)] })] }) }),
-  ];
-  return Game({ players, turn: 0, version: 0, rng: 1, last: null, winner: null });
-}
+const mk = (seat, groups) => Player({ seat, queue: Queue({ groups: groups.map((g) => Group({ dice: g.map(([id, o]) => Die({ id, o })) })) }) });
+const others = [mk(1, [[[4, 0]], [[5, 0]], [[6, 0]], [[7, 0]]]), mk(2, [[[8, 0]], [[9, 0]], [[10, 0]], [[11, 0]]]), mk(3, [[[12, 0]], [[13, 0]], [[14, 0]], [[15, 0]]])];
+const at = (groups) => Game({ players: [mk(0, groups), ...others], turn: 0, version: 1, rng: 7, last: null, winner: null });
 
 function isGame(v) {
   return v && typeof v === "object" && v.kind === "game";
@@ -61,6 +15,8 @@ function isGame(v) {
 function isAnchor(v) {
   return v === null || (v && typeof v === "object" && typeof v.x === "number" && typeof v.y === "number");
 }
+
+// --- wrapped functions ---
 
 export function init(input) {
   if (input === null || typeof input !== "object" || Array.isArray(input))
@@ -104,6 +60,15 @@ export function show(prev, next) {
   if (result !== undefined) throw new Error("show: expected void");
 }
 
+export function near(game, seat) {
+  if (!isGame(game)) throw new Error("near: expected a Game");
+  if (typeof seat !== "number" || !Number.isInteger(seat) || seat < 0 || seat > 3)
+    throw new Error("near: seat must be an integer 0..3");
+  const result = real.near(game, seat);
+  if (typeof result !== "boolean") throw new Error("near: expected a boolean");
+  return result;
+}
+
 export function rank(game) {
   if (!isGame(game)) throw new Error("rank: expected a Game");
   const result = real.rank(game);
@@ -118,6 +83,8 @@ export function rank(game) {
 
 export const _sheo_browser = true;
 
+// --- DOM helpers ---
+
 function findElementByText(text) {
   const all = document.querySelectorAll("*");
   for (const el of all) {
@@ -128,28 +95,66 @@ function findElementByText(text) {
   return null;
 }
 
+function isBannerVisible() {
+  const el = findElementByText("Player 2 is close to winning!");
+  if (!el) return false;
+  const style = getComputedStyle(el);
+  return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+}
+
+// --- _sheo_check ---
+
 export async function _sheo_check() {
-  // 1. rank with fixture game
-  const fixtureGame = makeFixtureGame();
-  const rFixture = rank(fixtureGame);
-  assert.deepStrictEqual(rFixture, [
+  // 1. near golden values
+  const nearCases = [
+    { groups: [[[0, 0], [1, 0], [2, 0]], [[3, 7]]], expected: true },
+    { groups: [[[3, 7]], [[0, 0], [1, 0], [2, 0]]], expected: true },
+    { groups: [[[0, 0], [1, 9], [2, 0]], [[3, 7]]], expected: false },
+    { groups: [[[0, 0], [1, 0]], [[2, 2], [3, 2]]], expected: true },
+    { groups: [[[0, 0], [1, 0]], [[2, 3], [3, 3]]], expected: true },
+    { groups: [[[0, 0], [1, 0]], [[2, 4], [3, 4]]], expected: false },
+    { groups: [[[0, 0], [1, 0]], [[2, 0]], [[3, 0]]], expected: false },
+    { groups: [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]], expected: false },
+  ];
+  for (const { groups, expected } of nearCases) {
+    const g = at(groups);
+    assert.strictEqual(near(g, 0), expected, `near at(${JSON.stringify(groups)}, 0)`);
+    assert.strictEqual(near(g, 1), false, `near at(${JSON.stringify(groups)}, 1)`);
+    assert.strictEqual(near(g, 2), false, `near at(${JSON.stringify(groups)}, 2)`);
+    assert.strictEqual(near(g, 3), false, `near at(${JSON.stringify(groups)}, 3)`);
+  }
+
+  // 2. rank golden value: this game
+  const rankGamePlayers = [
+    mk(0, [[[0, 0], [1, 0]], [[2, 5]], [[3, 1]]]),
+    mk(1, [[[4, 0]], [[5, 0]], [[6, 0]], [[7, 0]]]),
+    mk(2, [[[8, 0], [9, 0], [10, 0], [11, 0]]]),
+    mk(3, [[[12, 0]], [[13, 0]], [[14, 0]], [[15, 2]]]),
+  ];
+  const rankGame = Game({ players: rankGamePlayers, turn: 2, version: 3, rng: 7, last: null, winner: 2 });
+  assert.deepStrictEqual(rank(rankGame), [
     { "seat": 2, "rank": 1, "largest": 4, "groups": 1 },
     { "seat": 0, "rank": 2, "largest": 2, "groups": 1 },
     { "seat": 1, "rank": 3, "largest": 1, "groups": 0 },
     { "seat": 3, "rank": 3, "largest": 1, "groups": 0 },
   ]);
 
-  // 2. rank with tie game
-  const tieGame = makeTieGame();
-  const rTie = rank(tieGame);
-  assert.deepStrictEqual(rTie, [
+  // 3. tie rank golden value
+  const tieGamePlayers = [
+    mk(0, [[[0, 0], [1, 0]], [[2, 5], [3, 5]]]),
+    mk(1, [[[4, 0], [5, 0]], [[6, 1], [7, 1]]]),
+    mk(2, [[[8, 0], [9, 0], [10, 0], [11, 0]]]),
+    mk(3, [[[12, 0], [13, 0], [14, 0]], [[15, 2]]]),
+  ];
+  const tieGame = Game({ players: tieGamePlayers, turn: 2, version: 9, rng: 7, last: null, winner: 2 });
+  assert.deepStrictEqual(rank(tieGame), [
     { "seat": 2, "rank": 1, "largest": 4, "groups": 1 },
     { "seat": 3, "rank": 2, "largest": 3, "groups": 1 },
     { "seat": 0, "rank": 3, "largest": 2, "groups": 2 },
     { "seat": 1, "rank": 3, "largest": 2, "groups": 2 },
   ]);
 
-  // 3. DOM setup: init, frame, drain
+  // 4. DOM setup: init, frame, drain
   const canvas = document.querySelector("canvas");
   assert.ok(canvas, "canvas exists");
 
@@ -176,10 +181,39 @@ export async function _sheo_check() {
   frame({ canRoll: false, anchor: { x: 400, y: 300 } });
   assert.strictEqual(getComputedStyle(rollBtn).display, "none", "button should be hidden when canRoll is false");
 
-  // 4. Banner test
-  const bannerPrev = makeBannerPrevGame();
-  const bannerNext = makeBannerNextGame();
-  show(bannerPrev, bannerNext);
+  // 5. Banner non-near test: seat 1 goes from four single dice to [[4,0],[5,9],[6,0]],[[7,7]] (group of 3, not alike) -> no banner
+  const bannerPrevPlayers = [
+    mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]),
+    mk(1, [[[4, 0]], [[5, 0]], [[6, 0]], [[7, 0]]]),
+    mk(2, [[[8, 0]], [[9, 0]], [[10, 0]], [[11, 0]]]),
+    mk(3, [[[12, 0]], [[13, 0]], [[14, 0]], [[15, 0]]]),
+  ];
+  const bannerPrev = Game({ players: bannerPrevPlayers, turn: 0, version: 1, rng: 7, last: null, winner: null });
+
+  const bannerNextNearlessPlayers = [
+    mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]),
+    mk(1, [[[4, 0], [5, 9], [6, 0]], [[7, 7]]]),
+    mk(2, [[[8, 0]], [[9, 0]], [[10, 0]], [[11, 0]]]),
+    mk(3, [[[12, 0]], [[13, 0]], [[14, 0]], [[15, 0]]]),
+  ];
+  const bannerNextNearless = Game({ players: bannerNextNearlessPlayers, turn: 0, version: 2, rng: 7, last: null, winner: null });
+
+  show(bannerPrev, bannerNextNearless);
+
+  await new Promise((r) => setTimeout(r, 600));
+
+  assert.ok(!isBannerVisible(), "no banner for non-near transition (group of 3, not alike)");
+
+  // 6. Banner near test: seat 1 goes from four single dice to [[4,0],[5,0],[6,0]],[[7,7]] (near) -> banner "Player 2 is close to winning!"
+  const bannerNextNearPlayers = [
+    mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]),
+    mk(1, [[[4, 0], [5, 0], [6, 0]], [[7, 7]]]),
+    mk(2, [[[8, 0]], [[9, 0]], [[10, 0]], [[11, 0]]]),
+    mk(3, [[[12, 0]], [[13, 0]], [[14, 0]], [[15, 0]]]),
+  ];
+  const bannerNextNear = Game({ players: bannerNextNearPlayers, turn: 0, version: 3, rng: 7, last: null, winner: null });
+
+  show(bannerPrev, bannerNextNear);
 
   await new Promise((r) => setTimeout(r, 600));
 
@@ -187,8 +221,8 @@ export async function _sheo_check() {
   assert.ok(bannerEl, "banner exists");
   assert.ok(bannerEl.textContent.includes("Player 2 is close to winning!"), "banner text correct");
 
-  // 5. Window test
-  const winNext = fixtureGame.with({ winner: 2 });
+  // 7. Window test
+  const winNext = rankGame.with({ winner: 2 });
   show(null, winNext);
 
   await new Promise((r) => setTimeout(r, WIN.window + 500));
