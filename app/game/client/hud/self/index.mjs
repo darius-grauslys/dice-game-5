@@ -7,11 +7,29 @@ let bannerQueue = [];
 let windowShown = false;
 
 // near: whether the seat is close to winning.
-// True exactly when the seat's queue has exactly 2 groups, the dice of each
-// group all have the same o, and one group can be turned to the other's o.
+// True exactly when the seat's queue is either:
+// - exactly 2 groups, the dice of each group all have the same o, and one
+//   group can be turned to the other's o (always when one is a single die;
+//   for two groups of more than one die, one group's o is 1, 2 or 3 quarter
+//   turns about x from the other's); or
+// - exactly one group of 4 dice, of which exactly 3 have the same o and the
+//   fourth another.
 export function near(game, seat) {
   const player = game.players[seat];
   const groups = player.queue.groups;
+
+  // Exactly one group of 4 dice: near when exactly 3 have the same o and the
+  // fourth another (a group of 4 with all the same o is a win: not near).
+  if (groups.length === 1) {
+    const os = groups[0].dice.map((d) => d.o);
+    const counts = {};
+    for (const o of os) counts[o] = (counts[o] || 0) + 1;
+    const vals = Object.values(counts);
+    return vals.length === 2 && vals.includes(3) && vals.includes(1);
+  }
+
+  // Exactly 2 groups, the dice of each group all have the same o, and one
+  // group can be turned to the other's o.
   if (groups.length !== 2) return false;
 
   const oVals = groups.map((g) => {
