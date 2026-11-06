@@ -1,6 +1,10 @@
 import * as THREE from "three";
-import { FACES, YAW, CAMERA, ROLL_PAD, TABLE_R, DIE } from "../../../../../../common/index.mjs";
-import { mat3ToMatrix4, worldToRowNormal, visibleFaces, FACE_ORDER } from "./math.mjs";
+import { FACES, YAW, CAMERA, DIE, PLAYERS, FOLLOW, GLOW, LABEL, WIN, TABLE_R } from "../../../../../../common/index.mjs";
+import * as dice from "../../../../../../edges/scene/scene_to_dice.mjs";
+import * as label from "../../../../../../edges/scene/scene_to_label.mjs";
+import * as sparks from "../../../../../../edges/scene/scene_to_sparks.mjs";
+import * as fly from "../../../../../../edges/scene/scene_to_fly.mjs";
+import { mat3ToMatrix4 } from "./math.mjs";
 
 // pip positions for die face values 1-6 (fractional 0..1)
 const PIPS = {
@@ -12,42 +16,48 @@ const PIPS = {
   6: [[0.25, 0.75], [0.75, 0.75], [0.25, 0.5], [0.75, 0.5], [0.25, 0.25], [0.75, 0.25]],
 };
 
-let renderer, scene, camera, tableMesh, diceObjects, rollPadMesh, noticeEl;
+let renderer, scene, camera, tableMesh;
+let diceMeshes = [];
+let labelMeshes = [];
+let glowMeshes = [];
 let canvasEl, seat;
 let animating = false;
 let tracks = [];
 let noticeText = null;
+let noticeEl = null;
 let noticeTimer = null;
 let rafId = null;
 let firstPlayDone = false;
 let playStart = 0;
 let posesById = {};
+let holdState = null; // {poses, at, to, lastHoldPoses, holdStart, holdPosesById}
+let finaleState = null; // {started: bool, tracksEnd: number}
+let glowT0 = 0;
+let dustAnchor = null;
+let sparklerAnchor = null;
+let myPoints = null;
+let lastFrameTime = 0;
+let dustParticles = [];
+let sparklerParticles = [];
 
-function makeFaceTexture(value) {
-  const c = document.createElement("canvas");
-  c.width = 64; c.height = 64;
-  const ctx = c.getContext("2d");
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, 64, 64);
-  ctx.fillStyle = "#000000";
-  const pos = PIPS[value] || [];
-  for (const [px, py] of pos) {
-    ctx.beginPath();
-    ctx.arc(px * 64, py * 64, 6, 0, Math.PI * 2);
-    ctx.fill();
+function makeGlow(mesh) {
+  const group = mesh instanceof THREE.Group ? mesh : new THREE.Group();
+  if (mesh instanceof THREE.Group) {
+    for (const c of mesh.children) group.add(c.clone());
+  } else {
+    group.add(mesh.clone());
   }
-  return new THREE.CanvasTexture(c);
-}
-
-function makeDieMesh(id) {
-  const materials = FACE_ORDER.map((face) =>
-    new THREE.MeshBasicMaterial({ map: makeFaceTexture(FACES[face]) })
-  );
-  const geom = new THREE.BoxGeometry(DIE, DIE, DIE);
-  const mesh = new THREE.Mesh(geom, materials);
-  mesh.userData = { id };
-  mesh.visible = false;
-  return mesh;
+  group.scale.set(1.12, 1.12, 1.12);
+  const mat = new THREE.MeshStandardMaterial({
+    color: GLOW.colour,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+  });
+  for (const c of group.children) {
+    if (c.material) c.material = mat;
+  }
+  group.visible = false;
+  return group;
 }
 
 function init({ canvas, seat: s }) {
@@ -56,56 +66,104 @@ function init({ canvas, seat: s }) {
   const w = canvas.width;
   const h = canvas.height;
 
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(w, h);
   renderer.setPixelRatio(1);
 
   scene = new THREE.Scene();
 
-  camera = new THREE.PerspectiveCamera(CAMERA.fov, w / h, 0.1, 100);
-  const eye = CAMERA.eye;
-  const target = CAMERA.target;
+  const cameraClass = THREE.PerspectiveCamera || THREE.Camera;
+  camera = new cameraClass(CAMERA.fov, w / h, 0.1, 100);
   const yaw = YAW[s];
-  camera.position.set(
-    yaw[0][0] * eye[0] + yaw[0][1] * eye[1] + yaw[0][2] * eye[2],
-    yaw[1][0] * eye[0] + yaw[1][1] * eye[1] + yaw[1][2] * eye[2],
-    yaw[2][0] * eye[0] + yaw[2][1] * eye[1] + yaw[2][2] * eye[2]
-  );
-  camera.lookAt(
-    yaw[0][0] * target[0] + yaw[0][1] * target[1] + yaw[0][2] * target[2],
-    yaw[1][0] * target[0] + yaw[1][1] * target[1] + yaw[1][2] * target[2],
-    yaw[2][0] * target[0] + yaw[2][1] * target[1] + yaw[2][2] * target[2]
-  );
+  const eye = [
+    yaw[0][0] * CAMERA.eye[0] + yaw[0][1] * CAMERA.eye[1] + yaw[0][2] * CAMERA.eye[2],
+    yaw[1][0] * CAMERA.eye[0] + yaw[1][1] * CAMERA.eye[1] + yaw[1][2] * CAMERA.eye[2],
+    yaw[2][0] * CAMERA.eye[0] + yaw[2][1] * CAMERA.eye[1] + yaw[2][2] * CAMERA.eye[2],
+  ];
+  const target = [
+    yaw[0][0] * CAMERA.target[0] + yaw[0][1] * CAMERA.target[1] + yaw[0][2] * CAMERA.target[2],
+    yaw[1][0] * CAMERA.target[0] + yaw[1][1] * CAMERA.target[1] + yaw[1][2] * CAMERA.target[2],
+    yaw[2][0] * CAMERA.target[0] + yaw[2][1] * CAMERA.target[1] + yaw[2][2] * CAMERA.target[2],
+  ];
+  camera.position.set(eye[0], eye[1], eye[2]);
+  camera.lookAt(target[0], target[1], target[2]);
   camera.updateMatrixWorld();
 
-  // table: flat dark-green plane at y=0, rotated -π/2 about x, large enough to hold every row and the pad
-  const tgeom = new THREE.PlaneGeometry(20, 20);
+  // lights
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x334433, 0.9);
+  scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  const lightPos = [
+    yaw[0][0] * 3 + yaw[0][1] * 10 + yaw[0][2] * 6,
+    yaw[1][0] * 3 + yaw[1][1] * 10 + yaw[1][2] * 6,
+    yaw[2][0] * 3 + yaw[2][1] * 10 + yaw[2][2] * 6,
+  ];
+  dir.position.set(lightPos[0], lightPos[1], lightPos[2]);
+  scene.add(dir);
+
+  // table: large flat plane at y=0
+  const tgeom = new THREE.PlaneGeometry(TABLE_R * 4, TABLE_R * 4);
   tableMesh = new THREE.Mesh(tgeom, new THREE.MeshBasicMaterial({ color: 0x1a4d2e }));
   tableMesh.position.set(0, 0, 0);
   tableMesh.rotation.set(-Math.PI / 2, 0, 0);
   scene.add(tableMesh);
 
-  // 16 dice
-  diceObjects = [];
+  // seed and perms
+  let seed = 0;
+  try {
+    const meta = document.querySelector('meta[name="dice-seed"]');
+    const c = meta?.content;
+    seed = Number(c);
+    if (!Number.isInteger(seed)) seed = 0;
+  } catch {
+    seed = 0;
+  }
+  const perms = dice.facesFor(seed);
+
+  // 16 dice wrapped in groups (hide before play)
+  diceMeshes = [];
   for (let i = 0; i < 16; i++) {
-    const m = makeDieMesh(i);
-    diceObjects.push(m);
-    scene.add(m);
+    const owner = Math.floor(i / 4);
+    const m = dice.makeDie({ colour: PLAYERS[owner].colour, ring: PLAYERS[owner].ring, perm: perms[owner] });
+    const g = new THREE.Group();
+    g.add(m);
+    g.visible = false;
+    g.userData = { kind: "die", id: i };
+    diceMeshes.push(g);
+    scene.add(g);
   }
 
-  // roll pad: flat square of side ROLL_PAD.size at YAW[seat]·ROLL_PAD.center, a colour unlike the table
-  const rgeom = new THREE.PlaneGeometry(ROLL_PAD.size, ROLL_PAD.size);
-  rollPadMesh = new THREE.Mesh(rgeom, new THREE.MeshBasicMaterial({ color: 0x2a3d4e }));
-  const rc = ROLL_PAD.center;
-  rollPadMesh.position.set(
-    yaw[0][0] * rc[0] + yaw[0][1] * rc[1] + yaw[0][2] * rc[2],
-    yaw[1][0] * rc[0] + yaw[1][1] * rc[1] + yaw[1][2] * rc[2],
-    yaw[2][0] * rc[0] + yaw[2][1] * rc[1] + yaw[2][2] * rc[2]
-  );
-  rollPadMesh.userData = { kind: "roll" };
-  // PlaneGeometry default lies in x-y plane with normal +z; rotate so normal is +y:
-  rollPadMesh.rotation.set(-Math.PI / 2, 0, 0);
-  scene.add(rollPadMesh);
+  // 4 labels wrapped in groups (hide before play)
+  labelMeshes = [];
+  for (let o = 0; o < 4; o++) {
+    const m = label.makeLabel({ text: PLAYERS[o].label, colour: PLAYERS[o].colour });
+    const g = new THREE.Group();
+    g.add(m);
+    g.visible = false;
+    labelMeshes.push(g);
+    scene.add(g);
+  }
+
+  // glow outlines (behind dice) wrapped in groups (hidden before play)
+  glowMeshes = [];
+  for (let i = 0; i < 16; i++) {
+    const g0 = makeGlow(diceMeshes[i] instanceof THREE.Group ? diceMeshes[i].children[0] : diceMeshes[i]);
+    const g = new THREE.Group();
+    g.add(g0);
+    g.visible = false;
+    glowMeshes.push(g);
+    scene.add(g);
+  }
+
+  // sparks
+  sparks.init(scene);
+  let pts = scene.children.find(c => c.isPoints);
+  if (pts) scene.remove(pts);
+  const pgeom = new THREE.BufferGeometry();
+  const pmat = new THREE.PointsMaterial({ color: 0xffd84a, size: 2 });
+  myPoints = new THREE.Points(pgeom, pmat);
+  myPoints.depthWrite = false;
+  scene.add(myPoints);
 
   // notice DOM element
   noticeEl = document.createElement("div");
@@ -116,24 +174,55 @@ function init({ canvas, seat: s }) {
   noticeEl.style.height = h + "px";
   noticeEl.style.display = "none";
   noticeEl.style.zIndex = "10";
-  noticeEl.style.color = "#ff4444";
+  noticeEl.style.backgroundColor = "rgba(0,0,0,0.6)";
+  noticeEl.style.borderRadius = "16px";
+  noticeEl.style.color = "#ffffff";
   noticeEl.style.fontSize = "16px";
-  noticeEl.style.fontWeight = "bold";
+  noticeEl.style.fontWeight = "normal";
   noticeEl.style.textAlign = "center";
-  noticeEl.style.bottom = "10px";
-  noticeEl.style.margin = "0";
+  noticeEl.style.text = "pill";
+  noticeEl.style.padding = "8px 16px";
+  noticeEl.style.borderRadius = "16px";
+  noticeEl.style.display = "none";
+  noticeEl.style.position = "absolute";
+  noticeEl.style.top = "12px";
+  noticeEl.style.left = "50%";
+  noticeEl.style.transform = "translateX(-50%)";
+  noticeEl.style.border = "1px rgba(255,255,255,0.3)";
+  noticeEl.style.borderRadius = "16px";
   if (canvasEl.parentNode) canvasEl.parentNode.insertBefore(noticeEl, canvasEl);
 
   animating = false;
   tracks = [];
   noticeText = null;
   firstPlayDone = false;
+  playStart = 0;
   posesById = {};
+  holdState = null;
+  finaleState = null;
+  glowT0 = 0;
+  dustAnchor = null;
+  sparklerAnchor = null;
+  lastFrameTime = performance.now();
 
-  (function loop() {
+  (function loop(t) {
     rafId = requestAnimationFrame(loop);
-    renderer.render(scene, camera);
-    tickTracks();
+    const now = t || performance.now();
+    const dt = firstPlayDone ? now - lastFrameTime : 0;
+    lastFrameTime = now;
+    if (!firstPlayDone && diceMeshes.length > 0) {
+    }
+    try {
+      tickTracks(dt);
+      tickHold(dt);
+      tickGlow(now);
+      tickFinale(now);
+      renderParticles(now);
+      const pts = scene.children.find(c => c.isPoints);
+      renderer.render(scene, camera);
+    } catch (e) {
+      console.log("RENDER ERROR:", (e && e.message) || String(e));
+    }
   })();
 }
 
@@ -149,31 +238,106 @@ function setDiePose(mesh, position, matrix) {
   mesh.quaternion.setFromRotationMatrix(m4);
 }
 
-function play(tracksInput, poses) {
+function play(tracksInput, posesInput, state) {
   playStart = performance.now();
   tracks = tracksInput || [];
-
   posesById = {};
-  for (const p of poses) posesById[p.id] = p;
+  for (const p of posesInput) posesById[p.id] = p;
 
+  // end hold
+  holdState = null;
+
+  // end any running tracks: reset track positions to poses
   const trackById = {};
   for (const tr of tracks) trackById[tr.id] = tr;
 
+  // show all dice at their poses (except tracked ones handled in tickTracks)
   for (let i = 0; i < 16; i++) {
-    diceObjects[i].visible = true;
+    diceMeshes[i].visible = true;
     const tr = trackById[i];
     if (tr) {
-      setDiePose(diceObjects[i], tr.from.position, tr.from.matrix);
+      // starts at track.from (or hold position if held)
+      const hp = holdState && holdState.holdPosesById && holdState.holdPosesById[i];
+      if (hp) {
+        setDiePose(diceMeshes[i], hp.position, hp.matrix);
+      } else {
+        setDiePose(diceMeshes[i], tr.from.position, tr.from.matrix);
+      }
     } else {
-      setDiePose(diceObjects[i], posesById[i].position, posesById[i].matrix);
+      setDiePose(diceMeshes[i], posesById[i].position, posesById[i].matrix);
     }
   }
 
+  // labels: show and position
+  for (let o = 0; o < 4; o++) {
+    labelMeshes[o].visible = true;
+    const lp = state.labels[o].position;
+    labelMeshes[o].position.set(lp[0], lp[1], lp[2]);
+    // turned about +y to face the camera
+    const yaw = YAW[seat];
+    const eye = [
+      yaw[0][0] * CAMERA.eye[0] + yaw[0][1] * CAMERA.eye[1] + yaw[0][2] * CAMERA.eye[2],
+      yaw[1][0] * CAMERA.eye[0] + yaw[1][1] * CAMERA.eye[1] + yaw[1][2] * CAMERA.eye[2],
+      yaw[2][0] * CAMERA.eye[0] + yaw[2][1] * CAMERA.eye[1] + yaw[2][2] * CAMERA.eye[2],
+    ];
+    const dx = eye[0] - lp[0];
+    const dz = eye[2] - lp[2];
+    const angle = atan2(dx, dz);
+    labelMeshes[o].rotation.set(0, angle, 0);
+  }
+
+  // glow: outline dice in state.glow
+  for (let i = 0; i < 16; i++) {
+    glowMeshes[i].visible = false;
+  }
+  const hasWinner = state.winner !== null;
+  if (hasWinner) winnerState = state.winner;
+  if (!hasWinner) {
+    for (const id of state.glow || []) {
+      glowMeshes[id].visible = true;
+    }
+    glowT0 = playStart;
+  } else {
+    for (const g of glowMeshes) g.visible = false;
+  }
+
+  // dust: while winner === null, dust under active player's label
+  if (!hasWinner) {
+    const lp = state.labels[state.turn].position;
+    dustAnchor = [lp[0], lp[1] - 0.6, lp[2]];
+    sparks.dust(dustAnchor);
+    genDust(dustAnchor);
+  } else {
+    sparks.dust(null);
+    dustAnchor = null;
+    dustParticles = [];
+  }
+
+  // finale: first play with winner !== null starts it
+  if (hasWinner) {
+    if (!finaleState || !finaleState.started) {
+      finaleState = { started: true, tracksEnd: playStart };
+      // sparks.dust(null) handled above
+    }
+  } else {
+    finaleState = null;
+  }
+
+  // animating: true until every track has ended (finale doesn't count)
   animating = tracks.length > 0;
   firstPlayDone = true;
 }
 
-function tickTracks() {
+function trackEnded(tr, now) {
+  const delay = tr.delay || 0;
+  const ms = tr.ms || 0;
+  const elapsed = now - playStart;
+  if (elapsed < delay) return false;
+  const t = (elapsed - delay) / ms;
+  return t >= 1;
+}
+
+function tickTracks(dt) {
   if (tracks.length === 0) {
     animating = false;
     return;
@@ -188,6 +352,10 @@ function tickTracks() {
     const elapsed = now - playStart;
     if (elapsed < delay) {
       still = true;
+      // die stays at from (or hold)
+      const hp = holdState && holdState.holdPosesById && holdState.holdPosesById[id];
+      if (hp) setDiePose(diceMeshes[id], hp.position, hp.matrix);
+      else setDiePose(diceMeshes[id], tr.from.position, tr.from.matrix);
       continue;
     }
     const t = Math.min(1, (elapsed - delay) / ms);
@@ -195,7 +363,7 @@ function tickTracks() {
 
     const fp = tr.from.position;
     const tp = tr.to.position;
-    diceObjects[id].position.set(
+    diceMeshes[id].position.set(
       fp[0] + t * (tp[0] - fp[0]),
       fp[1] + t * (tp[1] - fp[1]),
       fp[2] + t * (tp[2] - fp[2])
@@ -211,10 +379,138 @@ function tickTracks() {
       spinQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), spin * Math.PI * 2 * t);
       slerpQ.multiply(spinQ);
     }
-    diceObjects[id].quaternion.copy(slerpQ);
+    diceMeshes[id].quaternion.copy(slerpQ);
   }
-  animating = still;
+
+  // check if all tracks ended
+  let allEnded = true;
+  for (const tr of tracks) {
+    if (!trackEnded(tr, performance.now())) { allEnded = false; break; }
+  }
+  animating = !allEnded;
 }
+
+function tickHold(dt) {
+  if (!holdState) return;
+  const { poses, at, to, holdPosesById } = holdState;
+  // for held dice, show at hold poses, lifted and moved by drag
+  for (const id of Object.keys(holdPosesById)) {
+    const p = holdPosesById[id];
+    const yTarget = p.position[1];
+    const worldAt = canvasToWorldPoint(at.x, at.y, yTarget);
+    const worldTo = canvasToWorldPoint(to.x, to.y, yTarget);
+    let worldDx = 0, worldDz = 0;
+    if (worldAt && worldTo) {
+      worldDx = worldTo.x - worldAt.x;
+      worldDz = worldTo.z - worldAt.z;
+    }
+    const dragLen = Math.hypot(worldDx, worldDz);
+    const maxLen = FOLLOW.max;
+    const scale = dragLen > maxLen ? maxLen / dragLen : 1;
+    const scaledDx = worldDx * scale;
+    const scaledDz = worldDz * scale;
+    diceMeshes[id].position.set(
+      p.position[0] + scaledDx,
+      p.position[1] + FOLLOW.lift,
+      p.position[2] + scaledDz
+    );
+    const m4 = mat3ToMatrix4(p.matrix);
+    diceMeshes[id].quaternion.setFromRotationMatrix(m4);
+  }
+}
+
+function tickGlow(now) {
+  const hasWinner = finaleState && finaleState.started;
+  if (hasWinner) {
+    for (const g of glowMeshes) g.visible = false;
+    return;
+  }
+  const t = now - glowT0;
+  const opacity = GLOW.min + (GLOW.max - GLOW.min) * (0.5 + 0.5 * Math.sin((2 * Math.PI * t) / GLOW.periodMs));
+  for (let i = 0; i < 16; i++) {
+    if (glowMeshes[i].visible) {
+      for (const c of glowMeshes[i].children) {
+        if (c.material && c.material.opacity !== undefined) c.material.opacity = opacity;
+      }
+    }
+  }
+}
+
+function tickFinale(now) {
+  if (!finaleState || !finaleState.started) return;
+  const tracksEnd = finaleState.tracksEnd;
+  const t = now - tracksEnd; // ms since finale began
+  // move the 12 dice not owned by winner on fly.flight
+  const winner = findWinner();
+  for (let i = 0; i < 16; i++) {
+    const owner = Math.floor(i / 4);
+    if (owner === winner) {
+      // winner's dice don't move, nothing touches them
+      continue;
+    }
+    const pose = posesById[i];
+    const flight = fly.flight(pose, i, findSeed(), t);
+    diceMeshes[i].position.set(flight.position[0], flight.position[1], flight.position[2]);
+    const m4 = mat3ToMatrix4(flight.matrix);
+    diceMeshes[i].quaternion.setFromRotationMatrix(m4);
+    // hidden once below y = -20
+    if (flight.position[1] <= -20) {
+      diceMeshes[i].visible = false;
+    } else {
+      diceMeshes[i].visible = true;
+    }
+  }
+
+  // winner's label: from t = WIN.label for WIN.labelMs ms, moves from its place to [0, 2.5, 0] and grows to 1.6x
+  const winnerLabel = labelMeshes[winner];
+  const lp0 = (finaleState.labelStartPos || (finaleState.labelStartPos = labelMeshes[winner].position.clone()));
+  let labelScale = 1;
+  let labelPos = labelMeshes[winner].position.clone();
+  if (t >= WIN.label) {
+    const lt = t - WIN.label;
+    if (lt < WIN.labelMs) {
+      const et = easeInOut(lt / WIN.labelMs);
+      labelPos.set(
+        lp0.x * (1 - et) + 0 * et,
+        lp0.y * (1 - et) + 2.5 * et,
+        lp0.z * (1 - et) + 0 * et
+      );
+      labelScale = 1 + 0.6 * et;
+      winnerLabel.scale.set(labelScale, labelScale, labelScale);
+      winnerLabel.position.set(labelPos.x, labelPos.y, labelPos.z);
+    } else {
+      labelPos.set(0, 2.5, 0);
+      labelScale = 1.6;
+      winnerLabel.scale.set(labelScale, labelScale, labelScale);
+      winnerLabel.position.set(0, 2.5, 0);
+      if (!sparklerAnchor) {
+        sparklerAnchor = [0, 2.5, 0];
+        sparks.sparkler(sparklerAnchor);
+        genSparkler(sparklerAnchor);
+      }
+    }
+  }
+}
+
+function easeInOut(t) {
+  if (t < 0.5) return 2 * t * t;
+  return 1 - 2 * (1 - t) * (1 - t);
+}
+
+function atan2(y, x) {
+  let a = Math.atan(y / x);
+  if (x < 0) a += (y >= 0 ? Math.PI : -Math.PI);
+  else if (x === 0 && y < 0) a = -Math.PI / 2;
+  else if (x === 0 && y > 0) a = Math.PI / 2;
+  return a;
+}
+
+function findWinner() {
+  // find winner from current state; we track it
+  return winnerState;
+}
+
+let winnerState = null;
 
 function notice(reply) {
   if (noticeTimer) clearTimeout(noticeTimer);
@@ -232,6 +528,33 @@ function notice(reply) {
   }
 }
 
+function canvasToWorldPoint(cx, cy, yTarget) {
+  const rect = { width: canvasEl.width, height: canvasEl.height };
+  const nx = rect.width === 0 ? 0 : ((cx / rect.width) * 2 - 1);
+  const ny = rect.height === 0 ? 0 : 1 - ((cy / rect.height) * 2);
+  const tanHalf = Math.tan((CAMERA.fov * Math.PI / 180) / 2);
+  const u = nx * tanHalf * camera.aspect;
+  const v = ny * tanHalf;
+  const localDir = new THREE.Vector3(u, v, -1).normalize();
+  const dir = localDir.clone().applyQuaternion(camera.quaternion);
+  const start = camera.position.clone();
+  if (Math.abs(dir.y) < 1e-6) return null;
+  const t = (yTarget - start.y) / dir.y;
+  if (t < 0) return null;
+  return { x: start.x + t * dir.x, z: start.z + t * dir.z };
+}
+
+function hold(h) {
+  if (h === null) {
+    holdState = null;
+    return;
+  }
+  const { poses, at, to } = h;
+  const holdPosesById = {};
+  for (const p of poses) holdPosesById[p.id] = p;
+  holdState = { poses, at, to, holdPosesById, lastHoldPoses: null, holdStart: performance.now() };
+}
+
 function pick({ x, y }) {
   const raycaster = new THREE.Raycaster();
   const rect = canvasEl.getBoundingClientRect
@@ -240,30 +563,25 @@ function pick({ x, y }) {
   const nx = rect.width === 0 ? 0 : ((x - rect.left) / rect.width) * 2 - 1;
   const ny = rect.height === 0 ? 0 : 1 - ((y - rect.top) / rect.height) * 2;
   raycaster.setFromCamera({ x: nx, y: ny }, camera);
-  const allObjects = diceObjects.concat([rollPadMesh, tableMesh]);
-  const intersects = raycaster.intersectObjects(allObjects, false);
-  let bestDie = null, bestRoll = null;
+  const allObjects = diceMeshes;
+  const intersects = raycaster.intersectObjects(allObjects, true);
+  let bestDie = null;
   for (const it of intersects) {
-    let obj = it.object;
-    while (obj && !obj.userData && obj.parent) obj = obj.parent;
-    if (!obj || !obj.userData) continue;
-    const ud = obj.userData;
-    if (ud.kind === "roll") {
-      bestRoll = it.distance;
-    } else if (ud.id !== undefined) {
-      if (!bestDie || it.distance < bestDie.dist) {
-        const mesh = diceObjects[ud.id];
-        const owner = Math.floor(ud.id / 4);
-        const worldNormal = it.normal.clone().transformDirection(mesh.matrixWorld);
-        const normal = worldToRowNormal(worldNormal, owner);
-        bestDie = { id: ud.id, normal, dist: it.distance };
+    let node = it.object;
+    let groupNode = null;
+    while (node) {
+      if (node.userData && node.userData.kind === "die" && node.userData.id !== undefined) {
+        groupNode = node;
+        break;
       }
+      node = node.parent;
+    }
+    if (!groupNode) continue;
+    if (!bestDie || it.distance < bestDie.dist) {
+      bestDie = { id: groupNode.userData.id, dist: it.distance };
     }
   }
-  if (bestDie && (!bestRoll || bestDie.dist <= bestRoll)) {
-    return { kind: "die", id: bestDie.id, normal: bestDie.normal };
-  }
-  if (bestRoll) return { kind: "roll" };
+  if (bestDie) return { kind: "die", id: bestDie.id };
   return null;
 }
 
@@ -280,21 +598,160 @@ function projectToCanvas(pos) {
   return { x: cssX, y: cssY };
 }
 
-function describe() {
-  if (!firstPlayDone) return { dice: [], roll: null, animating, notice: noticeText };
-  const dice = [];
-  for (let i = 0; i < 16; i++) {
-    const mesh = diceObjects[i];
-    const pos = mesh.position;
-    const pr = projectToCanvas(pos);
-    // find the pose for this die id to compute visible faces
-    const pose = posesById[i];
-    const faces = pose ? visibleFaces(pose, seat) : [];
-    dice.push({ id: i, x: pr ? pr.x : 0, y: pr ? pr.y : 0, visibleFaces: faces });
+function findSeed() {
+  let seed = 0;
+  try {
+    const meta = document.querySelector('meta[name="dice-seed"]');
+    const c = meta?.content;
+    seed = Number(c);
+    if (!Number.isInteger(seed)) seed = 0;
+  } catch {
+    seed = 0;
   }
-  const rollPos = rollPadMesh.position;
-  const rollPr = projectToCanvas(rollPos);
-  return { dice, roll: rollPr ? { x: rollPr.x, y: rollPr.y } : null, animating, notice: noticeText };
+  return seed;
 }
 
-export { init, nextFrame, play, notice, pick, describe };
+const MAX_PARTICLES = 200;
+let particlePositions = new Float32Array(MAX_PARTICLES * 3);
+let particleSizes = new Float32Array(MAX_PARTICLES);
+
+function genDust(anchor, count) {
+  dustParticles = [];
+  const n = count || 40;
+  for (let i = 0; i < n; i++) {
+    dustParticles.push({
+      ox: (Math.random() - 0.5) * 1.6,
+      oy: -0.15 - Math.random() * 0.7,
+      oz: (Math.random() - 0.5) * 1.6,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+}
+
+function genSparkler(anchor, count) {
+  sparklerParticles = [];
+  const n = count || 60;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = 0.05 + Math.random() * 0.7;
+    const h = -0.2 - Math.random() * 0.9;
+    sparklerParticles.push({
+      ax: Math.cos(a), ay: 1, az: Math.sin(a),
+      r: r, h: h,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 1.5,
+    });
+  }
+}
+
+function renderParticles(now) {
+  let idx = 0;
+  const anchor = dustAnchor;
+  if (anchor && dustParticles.length) {
+    for (const p of dustParticles) {
+      if (idx >= MAX_PARTICLES) break;
+      particlePositions[idx * 3] = anchor[0] + p.ox;
+      particlePositions[idx * 3 + 1] = anchor[1] + p.oy;
+      particlePositions[idx * 3 + 2] = anchor[2] + p.oz;
+      particleSizes[idx] = 2.5;
+      idx++;
+    }
+  }
+  const sanchor = sparklerAnchor;
+  if (sanchor && sparklerParticles.length) {
+    for (const p of sparklerParticles) {
+      if (idx >= MAX_PARTICLES) break;
+      const flick = 0.5 + 0.5 * Math.sin(now * 0.012 * p.speed + p.phase);
+      particlePositions[idx * 3] = sanchor[0] + p.ax * p.r;
+      particlePositions[idx * 3 + 1] = sanchor[1] + p.h + flick * 0.15;
+      particlePositions[idx * 3 + 2] = sanchor[2] + p.az * p.r;
+      particleSizes[idx] = 2 + flick * 3;
+      idx++;
+    }
+  }
+  const view = particlePositions.slice(0, idx * 3);
+  if (myPoints && myPoints.geometry) {
+    if (myPoints.geometry.setPositions) {
+      myPoints.geometry.setPositions(view);
+    } else if (myPoints.geometry.positions) {
+      myPoints.geometry.positions.set(view);
+    }
+  }
+}
+
+function describe() {
+  if (!firstPlayDone) return { dice: [], labels: [], glow: [], animating, notice: noticeText, finale: null };
+  const dice = [];
+  for (let i = 0; i < 16; i++) {
+    const mesh = diceMeshes[i];
+    const pos = mesh.position;
+    const pr = projectToCanvas(pos);
+    const pose = posesById[i];
+    const owner = Math.floor(i / 4);
+    let visibleValues = [];
+    if (pose) {
+      // compute visible faces: world normal dot (eye - centre) > 0
+      const yaw = YAW[seat];
+      const eye = [
+        yaw[0][0] * CAMERA.eye[0] + yaw[0][1] * CAMERA.eye[1] + yaw[0][2] * CAMERA.eye[2],
+        yaw[1][0] * CAMERA.eye[0] + yaw[1][1] * CAMERA.eye[1] + yaw[1][2] * CAMERA.eye[2],
+        yaw[2][0] * CAMERA.eye[0] + yaw[2][1] * CAMERA.eye[1] + yaw[2][2] * CAMERA.eye[2],
+      ];
+      const dx = eye[0] - pos.x;
+      const dy = eye[1] - pos.y;
+      const dz = eye[2] - pos.z;
+      const matrix = pose.matrix;
+      const faceNormals = [
+        [matrix[0][0], matrix[1][0], matrix[2][0]],
+        [-matrix[0][0], -matrix[1][0], -matrix[2][0]],
+        [matrix[0][1], matrix[1][1], matrix[2][1]],
+        [-matrix[0][1], -matrix[1][1], -matrix[2][1]],
+        [matrix[0][2], matrix[1][2], matrix[2][2]],
+        [-matrix[0][2], -matrix[1][2], -matrix[2][2]],
+      ];
+      const faceFACES = ["+x", "-x", "+y", "-y", "+z", "-z"];
+      const perm = diceFacesPerm(owner);
+      for (let f = 0; f < 6; f++) {
+        const n = faceNormals[f];
+        const dot = n[0] * dx + n[1] * dy + n[2] * dz;
+        if (dot > 0) {
+          const val = perm[FACES[faceFACES[f]] - 1];
+          visibleValues.push(val);
+        }
+      }
+      visibleValues.sort((a, b) => a - b);
+    }
+    dice.push({ id: i, x: pr ? pr.x : 0, y: pr ? pr.y : 0, visibleFaces: visibleValues });
+  }
+  const labels = [];
+  for (let o = 0; o < 4; o++) {
+    const m = labelMeshes[o];
+    const pr = projectToCanvas(m.position);
+    labels.push({ owner: o, x: pr ? pr.x : 0, y: pr ? pr.y : 0 });
+  }
+  const glowIds = [];
+  for (let i = 0; i < 16; i++) {
+    if (glowMeshes[i].visible) glowIds.push(i);
+  }
+  let finale = null;
+  if (finaleState && finaleState.started) {
+    finale = { t: performance.now() - finaleState.tracksEnd };
+  }
+  return { dice, labels, glow: glowIds, animating, notice: noticeText, finale };
+}
+
+function diceFacesPerm(owner) {
+  let seed = 0;
+  try {
+    const meta = document.querySelector('meta[name="dice-seed"]');
+    const c = meta?.content;
+    seed = Number(c);
+    if (!Number.isInteger(seed)) seed = 0;
+  } catch {
+    seed = 0;
+  }
+  const perms = dice.facesFor(seed);
+  return perms[owner];
+}
+
+export { init, nextFrame, play, hold, notice, pick, describe };
