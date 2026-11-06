@@ -110,9 +110,91 @@ export async function _sheo_sim(canvas, scenario) {
   const afterMaterialIds = afterMaterials.map((m) => m && m.uuid ? m.uuid : (m ? String(m) : null));
   const materialsSame = initMaterialIds.length === afterMaterialIds.length && initMaterialIds.every((id, i) => id === afterMaterialIds[i]);
 
+  // Urgent fix check: hold die 3 turned a quarter about y (as the hold step does),
+  // wait MS.turn + 100 ms, then play with a track for die 3 from its old pose to the turned pose.
+  // die 3's quaternion right after that play should equal the turned pose's (within 1e-6).
+  const q3Start = scene._dieQuaternion(3);
+  const q3StartA = quatArray(q3Start);
+  const heldPose3 = { ...poses[3], matrix: QY1 };
+  scene.hold({ poses: [heldPose3], at: { x: 400, y: 300 }, to: { x: 400, y: 300 } });
+  for (let i = 0; i < 30; i++) {
+    await scene.nextFrame();
+  }
+  const q3Held = scene._dieQuaternion(3);
+  const q3HeldA = quatArray(q3Held);
+  const heldAngle = angleBetween(q3StartA, q3HeldA);
+  scene.hold(null);
+  const track = { id: 3, from: { position: poses[3].position, matrix: IDENTITY }, to: { position: heldPose3.position, matrix: QY1 }, delay: 0, ms: MS.move, spin: 0 };
+  scene.play([track], poses, { turn: 0, glow: [3], winner: null, labels });
+  for (let i = 0; i < 5; i++) {
+    await scene.nextFrame();
+  }
+  const q3AfterPlay = scene._dieQuaternion(3);
+  const q3AfterPlayA = quatArray(q3AfterPlay);
+  const playAngle = angleBetween(q3AfterPlayA, toQ1);
+
+  // Finale reset scenario: start a finale with winner 0, wait WIN.label + WIN.labelMs + 500 ms,
+  // then play with winner null to end the finale, wait 10 frames.
+  scene.play([], poses, { turn: 0, glow: [3], winner: 0, labels });
+  for (let i = 0; i < 300; i++) {
+    await scene.nextFrame();
+  }
+  scene.play([], poses, { turn: 0, glow: [3], winner: null, labels });
+  for (let i = 0; i < 10; i++) {
+    await scene.nextFrame();
+  }
+
+  // print finale reset results
+  const diceStatus = [];
+  for (let i = 0; i < 16; i++) {
+    const pos = scene._diePosition(i);
+    const pose = poses[i];
+    const dx = pos[0] - pose.position[0];
+    const dy = pos[1] - pose.position[1];
+    const dz = pos[2] - pose.position[2];
+    const dist = Math.hypot(dx, dy, dz);
+    diceStatus.push({
+      id: i,
+      visible: scene._dieVisible(i),
+      pos,
+      posePos: pose.position,
+      distWithin1e6: dist <= 1e-6,
+    });
+  }
+  const labelStatus = [];
+  for (let o = 0; o < 4; o++) {
+    const s = scene._labelScale(o);
+    const p = scene._labelPosition(o);
+    const lp = labels[o].position;
+    const dx = p[0] - lp[0];
+    const dy = p[1] - lp[1];
+    const dz = p[2] - lp[2];
+    const dist = Math.hypot(dx, dy, dz);
+    labelStatus.push({
+      owner: o,
+      scale: s,
+      scaleAll1: s[0] === 1 && s[1] === 1 && s[2] === 1,
+      pos: p,
+      labelPos: lp,
+      distWithin1e6: dist <= 1e-6,
+    });
+  }
+  const sparklerRuns = scene._sparklerAnchor() !== null;
+  const sparklerCount = scene._sparklerParticleCount();
+  const desc = scene.describe();
+
+  const finaleReset = {
+    dice: diceStatus,
+    labels: labelStatus,
+    sparkler: { runs: sparklerRuns, count: sparklerCount, anchor: scene._sparklerAnchor() },
+    finale: desc.finale,
+  };
+
   const result = {
     holdTurn: { half, end, otherEnd, backHalf, backEnd },
     holdCheck: { materialsSame, initMaterialIds, afterMaterialIds },
+    urgentFix: { heldAngle, playAngle, holdTrack: playAngle <= 1e-6 },
+    finaleReset,
   };
 
   return result;

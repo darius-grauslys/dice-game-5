@@ -244,15 +244,14 @@ function quatArray(q) {
 }
 
 function quaternionToMatrix3(q) {
-  const m4 = new THREE.Matrix4().setFromQuaternion(q);
-  const e = m4.elements;
-  return [
-    [e[0], e[1], e[2]],
-    [e[4], e[5], e[6]],
-    [e[8], e[9], e[10]],
-  ];
+  const e = new THREE.Matrix4().makeRotationFromQuaternion(q).elements; // column-major
+  return [[e[0], e[4], e[8]], [e[1], e[5], e[9]], [e[2], e[6], e[10]]];
 }
 
+// play: show dice at poses (with tracks), labels, glow/dust, and a winning finale.
+// **Finale:** A `play` with `state.winner === null` ends a finale that is running or done:
+// every die visible at its pose (or its track), every label at its place with scale 1 and turned to the camera,
+// the sparkler stopped (`sparks.sparkler(null)`) and its particles gone, and the next win starts a new finale from the beginning.
 function play(tracksInput, posesInput, state) {
   playStart = performance.now();
   tracks = tracksInput || [];
@@ -297,9 +296,10 @@ function play(tracksInput, posesInput, state) {
     }
   }
 
-  // labels: show and position
+  // labels: show, position, scale 1, and turned to the camera
   for (let o = 0; o < 4; o++) {
     labelMeshes[o].visible = true;
+    labelMeshes[o].scale.set(1, 1, 1);
     const lp = state.labels[o].position;
     labelMeshes[o].position.set(lp[0], lp[1], lp[2]);
     // turned about +y to face the camera
@@ -336,6 +336,10 @@ function play(tracksInput, posesInput, state) {
     dustAnchor = [lp[0], lp[1] - 0.6, lp[2]];
     sparks.dust(dustAnchor);
     genDust(dustAnchor);
+    // end a running/done finale: stop sparkler and clear its particles
+    sparks.sparkler(null);
+    sparklerAnchor = null;
+    sparklerParticles = [];
   } else {
     sparks.dust(null);
     dustAnchor = null;
@@ -842,4 +846,31 @@ export function _dieQuaternion(id) {
 
 export function _dieMesh(id) {
   return diceMeshes[id].children[0];
+}
+
+export function _diePosition(id) {
+  const p = diceMeshes[id].position;
+  return [p.x, p.y, p.z];
+}
+
+export function _dieVisible(id) {
+  return diceMeshes[id].visible;
+}
+
+export function _labelScale(o) {
+  const s = labelMeshes[o].scale;
+  return [s.x, s.y, s.z];
+}
+
+export function _labelPosition(o) {
+  const p = labelMeshes[o].position;
+  return [p.x, p.y, p.z];
+}
+
+export function _sparklerAnchor() {
+  return sparklerAnchor;
+}
+
+export function _sparklerParticleCount() {
+  return sparklerParticles.length;
 }
