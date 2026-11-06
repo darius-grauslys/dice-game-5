@@ -1,5 +1,6 @@
-# Written by `wabbajack pipeline` once. This project's own from now on:
-# edit it; wabbajack never rewrites it.
+# Written by `wabbajack pipeline`. Edit it and it is this project's own:
+# `pipeline --update` replaces it only while it is exactly as wabbajack
+# wrote it (to bring in a newer wabbajack's rules), never once edited.
 #
 # The merge gate's checks: a merge request into the default branch runs
 # .githooks/check-changes on its whole change, in the project's dev image,
@@ -10,9 +11,14 @@
 # whose change it is, from the merge request's sheo-agent::<agent> label
 # (cheese sets it; none: unset, check everything), for the project's checks
 # to key on; then the project's setup (.wabbajack/setup) when there is one.
+#
+# A merge request into a staging group's branch (sheo-staging/<name>) gets
+# a pipeline too, so it can merge, but skips the checks: they run when the
+# group is promoted to the default branch.
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^sheo-staging\//
 
 check-changes:
   image: mcr.microsoft.com/playwright:v1.64.1-noble
@@ -20,6 +26,12 @@ check-changes:
   variables:
     GIT_DEPTH: "0"
   script:
+    - |
+      case ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-} in
+        sheo-staging/*)
+          echo "A staging group's merge skips the project's checks: they run when the group is promoted to the default branch."
+          exit 0 ;;
+      esac
     - |
       unset SHEO_AGENT
       old_ifs=$IFS; IFS=,
