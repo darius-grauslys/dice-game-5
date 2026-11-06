@@ -200,3 +200,56 @@ test("step keeps faces: the returned game has the same faces as the input", () =
   assert.strictEqual(reply.ok, true);
   assert.deepStrictEqual(g.faces, game.faces);
 });
+
+test("next({seed: 10}) after a win emits the next game with the golden values", async () => {
+  let emittedGames = [];
+  const actions = [
+    Action({ id: "a1", seat: 0, move: "turn", axis: "x", dir: -1, version: 0 }),
+    Action({ id: "a2", seat: 1, move: "turn", axis: "z", dir: 1, version: 1 }),
+    Action({ id: "a3", seat: 2, move: "turn", axis: "z", dir: 1, version: 2 }),
+    Action({ id: "a4", seat: 3, move: "turn", axis: "x", dir: 1, version: 3 }),
+  ];
+  let pollCount = 0;
+  const up = {
+    poll({ wait }) {
+      pollCount++;
+      if (pollCount === 1) {
+        return actions.map((a) => ({ type: "action", body: a }));
+      }
+      return [];
+    },
+    emit(msg) {
+      if (msg.type === "game") emittedGames.push(msg);
+    },
+  };
+  await server.init({ seed: 9 }, up);
+  assert.strictEqual(emittedGames.length, 1);
+  assert.strictEqual(emittedGames[0].body.version, 0);
+
+  await server.begin();
+  const lastGame = emittedGames[emittedGames.length - 1];
+  assert.strictEqual(lastGame.body.version, 4);
+  assert.strictEqual(lastGame.body.winner, 3);
+
+  emittedGames = [];
+  await server.next({ seed: 10 });
+  assert.strictEqual(emittedGames.length, 1);
+  const g = emittedGames[0].body;
+  assert.strictEqual(g.version, 5);
+  assert.strictEqual(g.turn, 0);
+  assert.strictEqual(g.winner, null);
+  assert.strictEqual(g.rng, 3535249242);
+  assert.strictEqual(g.last.change, "deal");
+  assert.deepStrictEqual(g.faces, [
+    [2, 1, 3, 6, 4, 5],
+    [2, 1, 5, 3, 4, 6],
+    [5, 4, 1, 2, 3, 6],
+    [5, 2, 3, 6, 1, 4],
+  ]);
+  assert.deepStrictEqual(groupsOf(g), [
+    [[[0, 17]], [[1, 6]], [[2, 3]], [[3, 4]]],
+    [[[4, 20]], [[5, 18], [6, 6]], [[7, 21]]],
+    [[[8, 11]], [[9, 6]], [[10, 0]], [[11, 2]]],
+    [[[12, 10], [13, 14]], [[14, 18]], [[15, 13]]],
+  ]);
+});
