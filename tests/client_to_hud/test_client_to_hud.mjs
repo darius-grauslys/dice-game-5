@@ -102,6 +102,13 @@ function isBannerVisible() {
   return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
 }
 
+function isWindowVisible(text) {
+  const el = findElementByText(text);
+  if (!el) return false;
+  const style = getComputedStyle(el);
+  return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+}
+
 // --- _sheo_check ---
 
 export async function _sheo_check() {
@@ -244,4 +251,43 @@ export async function _sheo_check() {
     pLabels.push(label);
   }
   assert.deepStrictEqual(pLabels, ["P1", "P2", "P3", "P4"]);
+
+  // 8. Scoreboard closes on a new game
+  // Hide the window first (from section 7 the window shows "Player 3 wins!")
+  const hideFresh = rankGame.with({ winner: null, version: 9999 });
+  show(null, hideFresh);
+
+  // 8a. show(null, won) → after WIN.window ms the window shows (as now)
+  const wonGame = rankGame.with({ winner: 2 });
+  show(null, wonGame);
+  await new Promise((r) => setTimeout(r, WIN.window + 500));
+  assert.ok(isWindowVisible("Player 3 wins!"), "scoreboard: window shows after WIN.window ms");
+
+  // 8b. show(null, fresh) with same players, winner: null, higher version → window hidden at once
+  const freshGame = wonGame.with({ winner: null, version: wonGame.version + 100 });
+  show(null, freshGame);
+  // check in the same tick
+  assert.ok(!isWindowVisible("Player 3 wins!"), "scoreboard: window hidden at once when show(null, fresh)");
+
+  // check after 2 frames
+  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.ok(!isWindowVisible("Player 3 wins!"), "scoreboard: window hidden after 2 frames");
+
+  // 8c. show(fresh, won2) with a winner again → after WIN.window ms window shows again, new winner's text
+  const won2Game = freshGame.with({ winner: 1 });
+  show(freshGame, won2Game);
+  await new Promise((r) => setTimeout(r, WIN.window + 500));
+  assert.ok(isWindowVisible("Player 2 wins!"), "scoreboard: window shows again after WIN.window ms with new winner");
+
+  // 8d. a show(prev, won) followed within WIN.window ms by show(null, fresh) → window never shows
+  // Hide the window first (from section 8c it shows "Player 2 wins!")
+  show(null, freshGame.with({ winner: null, version: freshGame.version + 100 }));
+  const wonGame3 = at([[[0, 0], [1, 0], [2, 0]], [[3, 7]]]).with({ winner: 0 });
+  show(null, wonGame3);
+  await new Promise((r) => setTimeout(r, WIN.window - 200));
+  const freshGame3 = wonGame3.with({ winner: null, version: wonGame3.version + 1 });
+  show(null, freshGame3);
+  await new Promise((r) => setTimeout(r, WIN.window + 500));
+  assert.ok(!isWindowVisible("Player 1 wins!"), "scoreboard: window never shows when show(null, fresh) called within WIN.window ms");
 }
