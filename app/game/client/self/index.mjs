@@ -16,6 +16,7 @@ export async function init({ seat: s, canvas }, upArg) {
 }
 
 export async function begin() {
+  const startGame = game;
   while (true) {
     // 1.
     await render.nextFrame();
@@ -24,8 +25,16 @@ export async function begin() {
     const msgs = await up.poll({ wait: false });
     for (const msg of msgs) {
       if (msg.type === "game") {
-        render.show(game, msg.body);
-        hud.show(game, msg.body);
+        if (game !== null && game.winner !== null && msg.body.winner === null) {
+          render.hold(null);
+          render.show(null, msg.body);
+          hud.show(null, msg.body);
+          pending = null;
+          drag = null;
+        } else {
+          render.show(game, msg.body);
+          hud.show(game, msg.body);
+        }
         game = msg.body;
       } else if (msg.type === "reply") {
         render.notice(msg.body);
@@ -80,7 +89,7 @@ export async function begin() {
     hud.frame({ canRoll, anchor });
 
     // 6.
-    if (game !== null && game.winner !== null && render.describe().animating === false) {
+    if (game !== null && game.winner !== null && game !== startGame && render.describe().animating === false) {
       return;
     }
   }
