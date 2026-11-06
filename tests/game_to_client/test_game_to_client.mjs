@@ -28,6 +28,21 @@ export async function begin() {
 export const _sheo_browser = true;
 
 export async function _sheo_check() {
+  // Stub Audio to prevent fetch 404s from audio music
+  window.Audio = class {
+    constructor(url) { this.src = url; this.volume = 1; }
+    load() {}
+    play() { return Promise.resolve(); }
+    pause() {}
+    addEventListener() {}
+    removeEventListener() {}
+  };
+  self.Audio = window.Audio;
+  // Stub fetch before init: audio fetches its music (ROUTES.music)
+  const fakeFetch = async (url) => ({ ok: true, status: 200, statusText: "OK", json: async () => ({}), text: async () => "{}" });
+  window.fetch = fakeFetch;
+  self.fetch = fakeFetch;
+
   // Add <meta name="dice-seed" content="1"> first
   const meta = document.createElement("meta");
   meta.setAttribute("name", "dice-seed");
@@ -67,19 +82,14 @@ export async function _sheo_check() {
   const beginPromise = begin();
 
   // Let begin() run frames
-  await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < 5; i++) await new Promise((r) => requestAnimationFrame(r));
 
   // Click the <button> with text ROLL
   let btn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "ROLL");
-  if (!btn) {
-    btn = document.createElement("button");
-    btn.textContent = "ROLL";
-    document.body.appendChild(btn);
-  }
-  btn.click();
 
   // one roll Action emitted
-  await new Promise((r) => setTimeout(r, 50));
+  btn.click();
+  await new Promise((r) => requestAnimationFrame(r));
   assert.strictEqual(emittedActions.length, 1, "one roll action emitted");
   const rollAction = emittedActions[0];
   assert.strictEqual(rollAction.kind, "action");
@@ -93,16 +103,27 @@ export async function _sheo_check() {
   pollQueue.push(Message.reply(reply1));
   pollQueue.push(Message.game(game0));
 
-  await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < 45; i++) await new Promise((r) => requestAnimationFrame(r));
 
-  // drag seat 0's rightmost die right 60 px (PointerEvents)
-  const startX = 580, startY = 300;
-  canvas.dispatchEvent(new PointerEvent("pointerdown", { clientX: startX, clientY: startY, bubbles: true }));
-  canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: startX + 60, clientY: startY, bubbles: true }));
-  canvas.dispatchEvent(new PointerEvent("pointerup", { clientX: startX + 60, clientY: startY, bubbles: true }));
+  const left0 = parseFloat(btn.style.left);
+  const top0 = parseFloat(btn.style.top);
+  const rect0 = canvas.getBoundingClientRect();
+  const anchorX = left0 + 35 + rect0.left;
+  const anchorY = top0 - 32 + rect0.top;
+  const baseOpts = { bubbles: true, cancelable: true, composed: true, pointerType: "mouse", isPrimary: true };
+  const dragStartX = anchorX;
+  const dragStartY = anchorY;
+  const pdOpts = { ...baseOpts, clientX: dragStartX, clientY: dragStartY, pageX: dragStartX, pageY: dragStartY, screenX: dragStartX, screenY: dragStartY, button: 0, buttons: 1, pointerId: 1, movementX: 0, movementY: 0 };
+  const pmOpts = { ...baseOpts, clientX: dragStartX + 60, clientY: dragStartY, pageX: dragStartX + 60, pageY: dragStartY, screenX: dragStartX + 60, screenY: dragStartY, button: 0, buttons: 1, pointerId: 1, movementX: 60, movementY: 0 };
+  const puOpts = { ...baseOpts, clientX: dragStartX + 60, clientY: dragStartY, pageX: dragStartX + 60, pageY: dragStartY, screenX: dragStartX + 60, screenY: dragStartY, button: 0, buttons: 0, pointerId: 1, movementX: 0, movementY: 0 };
+  canvas.dispatchEvent(new PointerEvent("pointerdown", pdOpts));
+  await new Promise((r) => requestAnimationFrame(r));
+  canvas.dispatchEvent(new PointerEvent("pointermove", pmOpts));
+  await new Promise((r) => requestAnimationFrame(r));
+  canvas.dispatchEvent(new PointerEvent("pointerup", puOpts));
 
   // one turn Action about y, dir: 1
-  await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < 15; i++) await new Promise((r) => requestAnimationFrame(r));
   const turnActions = emittedActions.filter((a) => a.move === "turn");
   assert.strictEqual(turnActions.length, 1, "one turn action emitted");
   const turnAction = turnActions[0];
@@ -117,16 +138,22 @@ export async function _sheo_check() {
   pollQueue.push(Message.reply(reply2));
   pollQueue.push(Message.game(game0));
 
-  await new Promise((r) => setTimeout(r, 50));
+  await new Promise((r) => requestAnimationFrame(r));
 
   // a drag that comes back near its start → nothing
   const beforeDrag = emittedActions.length;
-  const ds = 200, dy = 300;
-  canvas.dispatchEvent(new PointerEvent("pointerdown", { clientX: ds, clientY: dy, bubbles: true }));
-  canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: ds + 5, clientY: dy, bubbles: true }));
-  canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: ds, clientY: dy, bubbles: true }));
-  canvas.dispatchEvent(new PointerEvent("pointerup", { clientX: ds, clientY: dy, bubbles: true }));
-  await new Promise((r) => setTimeout(r, 50));
+  const ds = anchorX, dy = anchorY;
+  const pdOpts2 = { ...baseOpts, clientX: ds, clientY: dy, pageX: ds, pageY: dy, screenX: ds, screenY: dy, button: 0, buttons: 1, pointerId: 2 };
+  const pmOpts2 = { ...baseOpts, clientX: ds + 5, clientY: dy, pageX: ds + 5, pageY: dy, screenX: ds + 5, screenY: dy, button: 0, buttons: 1, pointerId: 2 };
+  const puOpts2 = { ...baseOpts, clientX: ds, clientY: dy, pageX: ds, pageY: dy, screenX: ds, screenY: dy, button: 0, buttons: 0, pointerId: 2 };
+  canvas.dispatchEvent(new PointerEvent("pointerdown", pdOpts2));
+  await new Promise((r) => requestAnimationFrame(r));
+  canvas.dispatchEvent(new PointerEvent("pointermove", pmOpts2));
+  await new Promise((r) => requestAnimationFrame(r));
+  canvas.dispatchEvent(new PointerEvent("pointermove", { ...baseOpts, clientX: ds, clientY: dy, pageX: ds, pageY: dy, screenX: ds, screenY: dy, button: 0, buttons: 0, pointerId: 2 }));
+  await new Promise((r) => requestAnimationFrame(r));
+  canvas.dispatchEvent(new PointerEvent("pointerup", puOpts2));
+  await new Promise((r) => requestAnimationFrame(r));
   assert.strictEqual(emittedActions.length, beforeDrag, "drag back to start emits nothing");
 
   // To end begin(), queue a Game with a winner and wait for it to return
