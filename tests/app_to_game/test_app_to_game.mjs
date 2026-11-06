@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import * as real from "../../edges/app/app_to_game.mjs";
-import { Up, Message, Game, Player, Queue, Group, Die, Action } from "../../common/index.mjs";
+import { Up, Message, Game, Player, Queue, Group, Die, Action, Last } from "../../common/index.mjs";
 
 // ---- wrapped functions: drop-in for the forwarder ----
 
@@ -49,7 +49,7 @@ function makeUp() {
       if (actionIndex < actions.length) {
         const a = actions[actionIndex];
         actionIndex++;
-        return Message.action(a);
+        return [Message.action(a)];
       }
       return new Promise(() => {}); // never resolves; server just waits
     },
@@ -182,7 +182,7 @@ export async function _sheo_check() {
       turn: 0,
       version: 5,
       rng: 3535249242,
-      last: null,
+      last: Last({ action: null, change: "deal", dice: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], before: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }),
       winner: null,
       faces: [
         [2, 1, 3, 6, 4, 5],
