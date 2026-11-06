@@ -5,6 +5,23 @@ import * as THREE from "three";
 const IDENTITY = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
 const QY1 = [[0, 0, 1], [0, 1, 0], [-1, 0, 0]];
 
+function meshMaterials(mesh) {
+  if (!mesh) return [];
+  if (mesh.materials) return mesh.materials;
+  if (mesh.material) return [mesh.material];
+  if (mesh instanceof THREE.Group) return mesh.children.flatMap(meshMaterials);
+  return [];
+}
+
+function quatArray(q) {
+  return [q.x, q.y, q.z, q.w];
+}
+
+function quatEq(a, b, eps) {
+  eps = eps || 1e-6;
+  return Math.abs(a.x - b.x) <= eps && Math.abs(a.y - b.y) <= eps && Math.abs(a.z - b.z) <= eps && Math.abs(a.w - b.w) <= eps;
+}
+
 function buildPoses(seat) {
   const poses = [];
   for (let id = 0; id < 16; id++) {
@@ -46,6 +63,11 @@ export async function _sheo_sim(canvas, scenario) {
   const seat = (scenario && scenario.seat) ?? 0;
   scene.init({ canvas, seat });
 
+  // capture die 3's materials right after init
+  const die3MeshInit = scene._dieMesh(3);
+  const initMaterials = meshMaterials(die3MeshInit);
+  const initMaterialIds = initMaterials.map((m) => m && m.uuid ? m.uuid : (m ? String(m) : null));
+
   const poses = buildPoses(seat);
   const labels = buildLabels(seat);
 
@@ -61,12 +83,37 @@ export async function _sheo_sim(canvas, scenario) {
   const die3 = desc.dice.find((d) => d.id === 3);
   const at = { x: die3.x, y: die3.y };
   const to = { x: die3.x + 40, y: die3.y };
+
+  // quaternion before hold
+  const qBefore = quatArray(scene._dieQuaternion(3));
+
   const holdPoses = [{ id: 3, position: poses[3].position, matrix: QY1 }];
   scene.hold({ poses: holdPoses, at, to });
 
+  // 200 ms after hold: advance frames (each frame ~16ms in browser, but we use real time)
+  const holdStart = performance.now();
   for (let i = 0; i < 20; i++) {
     await scene.nextFrame();
   }
+  const elapsed = performance.now() - holdStart;
+
+  const qMid = quatArray(scene._dieQuaternion(3));
+
+  // target quaternion from QY1
+  const m4Target = new THREE.Matrix4().set(
+    QY1[0][0], QY1[0][1], QY1[0][2], 0,
+    QY1[1][0], QY1[1][1], QY1[1][2], 0,
+    QY1[2][0], QY1[2][1], QY1[2][2], 0,
+    0, 0, 0, 1
+  );
+  const qTarget = new THREE.Quaternion().setFromRotationMatrix(m4Target);
+  const qTargetArr = quatArray(qTarget);
+
+  // materials after hold
+  const die3MeshAfter = scene._dieMesh(3);
+  const afterMaterials = meshMaterials(die3MeshAfter);
+  const afterMaterialIds = afterMaterials.map((m) => m && m.uuid ? m.uuid : (m ? String(m) : null));
+  const materialsSame = initMaterialIds.length === afterMaterialIds.length && initMaterialIds.every((id, i) => id === afterMaterialIds[i]);
 
   const desc2 = scene.describe();
   const die0 = desc2.dice.find((d) => d.id === 0);
@@ -83,6 +130,16 @@ export async function _sheo_sim(canvas, scenario) {
       notice: desc2.notice,
     },
     pick: { die0: pick0, die3: pick3 },
+    holdCheck: {
+      materialsSame,
+      initMaterialIds,
+      afterMaterialIds,
+      qBefore,
+      qMid,
+      qTarget: qTargetArr,
+      qMidEqTarget: quatEq(scene._dieQuaternion(3), qTarget, 1e-6),
+      elapsedMs: Number(elapsed.toFixed(2)),
+    },
   };
 
   if (scenario && scenario.winner !== undefined) {
