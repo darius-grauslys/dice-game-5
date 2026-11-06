@@ -18,7 +18,7 @@ const game = Game({
     mk(0, [[[0, 0], [1, 0]], [[2, 5]], [[3, 1]]]),
     mk(1, [[[4, 0]], [[5, 0]], [[6, 0]], [[7, 0]]]),
     mk(2, [[[8, 0], [9, 0], [10, 0], [11, 0]]]),
-    mk(3, [[[12, 0]], [[13, 0]], [[14, 0]], [[15, 2]]]),
+    mk(3, [[[12, 0], [13, 0], [14, 0]], [[15, 2]]]),
   ],
   turn: 0,
   version: 3,
@@ -74,22 +74,22 @@ test("seat 0's poses, seen by seat 0", () => {
   const poses = place(game, 0);
   assertPose(poses, 0, {
     owner: 0, group: 0, slot: 0,
-    position: [-2.275, 0.5, 4],
+    position: [-2.275, 0.5, 4.6],
     matrix: [[0.707107, 0, -0.707107], [0, 1, 0], [0.707107, 0, 0.707107]],
   });
   assertPose(poses, 1, {
     owner: 0, group: 0, slot: 1,
-    position: [-1.225, 0.5, 5],
+    position: [-1.225, 0.5, 5.65],
     matrix: [[0.707107, 0, -0.707107], [0, 1, 0], [0.707107, 0, 0.707107]],
   });
   assertPose(poses, 2, {
     owner: 0, group: 1, slot: 2,
-    position: [0.525, 0.5, 4],
+    position: [0.525, 0.5, 4.6],
     matrix: [[-0.707107, 0.707107, 0], [0, 0, 1], [0.707107, 0.707107, 0]],
   });
   assertPose(poses, 3, {
     owner: 0, group: 2, slot: 3,
-    position: [2.275, 0.5, 4],
+    position: [2.275, 0.5, 4.6],
     matrix: [[0.707107, 0.707107, 0], [0, 0, 1], [0.707107, -0.707107, 0]],
   });
 });
@@ -98,28 +98,48 @@ test("others seen by seat 0", () => {
   const poses = place(game, 0);
   assertPose(poses, 4, {
     owner: 1, group: 0, slot: 0,
-    position: [4, 0.5, 2.625],
-    matrix: [[-0.467888, 0, 0.883788], [0, 1, 0], [-0.883788, 0, -0.467888]],
+    position: [4.6, 0.5, 2.625],
+    matrix: [[-0.43073, 0, 0.902481], [0, 1, 0], [-0.902481, 0, -0.43073]],
   });
   assertPose(poses, 8, {
     owner: 2, group: 0, slot: 0,
-    position: [1.575, 0.5, -4],
+    position: [1.575, 0.5, -4.6],
     matrix: [[-0.707107, 0, 0.707107], [0, 1, 0], [-0.707107, 0, -0.707107]],
   });
   assertPose(poses, 9, {
     owner: 2, group: 0, slot: 1,
-    position: [0.525, 0.5, -5],
+    position: [0.525, 0.5, -5.65],
+    matrix: [[-0.707107, 0, 0.707107], [0, 1, 0], [-0.707107, 0, -0.707107]],
+  });
+  assertPose(poses, 10, {
+    owner: 2, group: 0, slot: 2,
+    position: [-0.525, 0.5, -6.7],
+    matrix: [[-0.707107, 0, 0.707107], [0, 1, 0], [-0.707107, 0, -0.707107]],
+  });
+  assertPose(poses, 11, {
+    owner: 2, group: 0, slot: 3,
+    position: [-1.575, 0.5, -7.75],
     matrix: [[-0.707107, 0, 0.707107], [0, 1, 0], [-0.707107, 0, -0.707107]],
   });
   assertPose(poses, 12, {
     owner: 3, group: 0, slot: 0,
-    position: [-4, 0.5, -2.625],
-    matrix: [[-0.883788, 0, 0.467888], [0, 1, 0], [-0.467888, 0, -0.883788]],
+    position: [-4.6, 0.5, -1.925],
+    matrix: [[-0.902481, 0, 0.43073], [0, 1, 0], [-0.43073, 0, -0.902481]],
+  });
+  assertPose(poses, 13, {
+    owner: 3, group: 0, slot: 1,
+    position: [-5.65, 0.5, -0.875],
+    matrix: [[-0.902481, 0, 0.43073], [0, 1, 0], [-0.43073, 0, -0.902481]],
+  });
+  assertPose(poses, 14, {
+    owner: 3, group: 0, slot: 2,
+    position: [-6.7, 0.5, 0.175],
+    matrix: [[-0.902481, 0, 0.43073], [0, 1, 0], [-0.43073, 0, -0.902481]],
   });
   assertPose(poses, 15, {
-    owner: 3, group: 3, slot: 3,
-    position: [-4, 0.5, 2.625],
-    matrix: [[-0.883788, 0.467888, 0], [0, 0, -1], [-0.467888, -0.883788, 0]],
+    owner: 3, group: 1, slot: 3,
+    position: [-4.6, 0.5, 1.925],
+    matrix: [[-0.902481, 0.43073, 0], [0, 0, -1], [-0.43073, -0.902481, 0]],
   });
 });
 
@@ -127,23 +147,23 @@ test("seat 1's own dice, seen by seat 1", () => {
   const poses = place(game, 1);
   assertPose(poses, 4, {
     owner: 1, group: 0, slot: 0,
-    position: [4, 0.5, 2.625],
+    position: [4.6, 0.5, 2.625],
     matrix: [[0.707107, 0, 0.707107], [0, 1, 0], [-0.707107, 0, 0.707107]],
   });
 });
 
 test("labels(0)", () => {
   const ls = labels(0);
-  assertLabel(ls, 0, [0, 1.5, 2.6]);
-  assertLabel(ls, 1, [4.41172, 1.5, -1.338091]);
-  assertLabel(ls, 2, [0, 1.5, -5.4]);
-  assertLabel(ls, 3, [-4.41172, 1.5, -1.338091]);
+  assertLabel(ls, 0, [0, 1.5, 8.7]);
+  assertLabel(ls, 1, [6.9, 1.5, 0]);
+  assertLabel(ls, 2, [0, 1.5, -8.8]);
+  assertLabel(ls, 3, [-6.9, 1.5, 0]);
 });
 
-test("labels(2)", () => {
-  const ls = labels(2);
-  assertLabel(ls, 0, [0, 1.5, 5.4]);
-  assertLabel(ls, 1, [4.41172, 1.5, 1.338091]);
-  assertLabel(ls, 2, [0, 1.5, -2.6]);
-  assertLabel(ls, 3, [-4.41172, 1.5, 1.338091]);
+test("labels(1)", () => {
+  const ls = labels(1);
+  assertLabel(ls, 0, [0, 1.5, 6.9]);
+  assertLabel(ls, 1, [8.7, 1.5, 0]);
+  assertLabel(ls, 2, [0, 1.5, -6.9]);
+  assertLabel(ls, 3, [-8.8, 1.5, 0]);
 });

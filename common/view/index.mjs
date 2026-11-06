@@ -14,7 +14,7 @@ function deepFreeze(v) {
 export const DIE = deepFreeze(1);
 export const GAP = deepFreeze(0.25);
 export const GROUP_GAP = deepFreeze(0.5);
-export const TABLE_R = deepFreeze(4);
+export const TABLE_R = deepFreeze(4.6);
 
 export const YAW = deepFreeze([
   [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
@@ -45,7 +45,9 @@ export const PLAYERS = deepFreeze([
   { label: "P4", colour: "#ff5fae", ring: "#ffc2e0" },
 ]);
 
-export const STACK = deepFreeze({ dx: 1.05, dz: 1 });
+// STACK: a group is a log; each die steps one dx along the row and one dz toward its owner,
+// every die (not every second one); cube centres stay at least √2 apart.
+export const STACK = deepFreeze({ dx: 1.05, dz: 1.05 });
 
 export const SECTORS = deepFreeze([
   { axis: "y", dir: 1 },
@@ -60,7 +62,9 @@ export const FOLLOW = deepFreeze({ max: 0.6, lift: 0.3 });
 
 export const GLOW = deepFreeze({ colour: "#ffd84a", periodMs: 2000, min: 0.35, max: 0.9 });
 
-export const LABEL = deepFreeze({ beyond: 1.4, height: 1.5, size: 0.8 });
+// LABEL.out: how far beyond its row, away from the table's centre, a player's name label
+// stands, for the viewer's own row, a row at the side, and the row across; `beyond` is left over.
+export const LABEL = deepFreeze({ beyond: 1.4, height: 1.5, size: 0.8, out: { own: 4.1, side: 2.3, far: 4.2 } });
 
 export const WIN = deepFreeze({ label: 2000, labelMs: 1500, window: 5500 });
 
