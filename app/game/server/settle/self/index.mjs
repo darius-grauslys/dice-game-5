@@ -1,50 +1,32 @@
-import {
-  Die,
-  Group,
-  Queue,
-  Player,
-  Last,
-  Game,
-  Action,
-  Reply,
-  Up,
-  Message,
-  AXES,
-  DIRS,
-  REASONS,
-  Rng,
-  FACES,
-  ORIENTATIONS,
-  TURN,
-} from "../../../../../common/index.mjs";
+import { Die, Group, Queue, Player, look } from "../../../../../common/index.mjs";
 
-function dieKey(d) {
-  return ORIENTATIONS[d.o].key;
+function dieLook(perm, d) {
+  return look(perm, d.o);
 }
 
-function groupHasSingleKey(group) {
-  const key = dieKey(group.dice[0]);
-  return group.dice.every((d) => dieKey(d) === key);
+function groupHasSingleLook(group, perm) {
+  const key = dieLook(perm, group.dice[0]);
+  return group.dice.every((d) => dieLook(perm, d) === key);
 }
 
-function splitIntoGroups(group) {
-  // If all dice share the same key, keep the group; otherwise replace with
+function splitIntoGroups(group, perm) {
+  // If all dice share the same look, keep the group; otherwise replace with
   // single-die groups, in its order.
-  if (groupHasSingleKey(group)) return [group];
+  if (groupHasSingleLook(group, perm)) return [group];
   return group.dice.map((d) => Group({ dice: [d] }));
 }
 
-function splitAndMerge(groups) {
-  // Split: any group whose dice don't all have the same key is replaced,
+function splitAndMerge(groups, perm) {
+  // Split: any group whose dice don't all have the same look is replaced,
   // in place, by single-die groups, in its order.
-  const afterSplit = groups.flatMap(splitIntoGroups);
+  const afterSplit = groups.flatMap((g) => splitIntoGroups(g, perm));
 
   // Merge: go through the groups left to right, building a new list. A group
-  // whose key some earlier group in the new list already has is appended to
+  // whose look some earlier group in the new list already has is appended to
   // that group's dice (keeping order). Otherwise it is added at the end.
-  const newList = []; // each: { key, dice: [] }
+  const newList = []; // each: { look, dice: [] }
   for (const g of afterSplit) {
-    const key = dieKey(g.dice[0]);
+    const key = dieLook(perm, g.dice[0]);
     const target = newList.find((ng) => ng.key === key);
     if (target) {
       target.dice.push(...g.dice);
@@ -55,6 +37,10 @@ function splitAndMerge(groups) {
 
   const finalGroups = newList.map((ng) => Group({ dice: ng.dice }));
   return Queue({ groups: finalGroups });
+}
+
+function permFor(game, seat) {
+  return game.faces === null ? null : game.faces[seat];
 }
 
 export function apply(game, seat) {
@@ -79,7 +65,8 @@ export function apply(game, seat) {
     afterBreak = [moved, ...rest];
   }
 
-  const newQueue = splitAndMerge(afterBreak);
+  const perm = permFor(game, seat);
+  const newQueue = splitAndMerge(afterBreak, perm);
   const newPlayer = Player({ seat: src.seat, queue: newQueue });
   players[seat] = newPlayer;
 
@@ -90,7 +77,8 @@ export function regroup(game, seat) {
   const players = [...game.players];
   const src = players[seat];
 
-  const newQueue = splitAndMerge(src.queue.groups);
+  const perm = permFor(game, seat);
+  const newQueue = splitAndMerge(src.queue.groups, perm);
   const newPlayer = Player({ seat: src.seat, queue: newQueue });
   players[seat] = newPlayer;
 
