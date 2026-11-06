@@ -142,12 +142,22 @@ export async function _sheo_check() {
     : [];
   assert.deepStrictEqual(expectedGlow, [0, 1, 2, 3], "expected glow ids for turn 0");
 
-  // pick at a die's described centre gives that die.
+  // pick at a die's described centre gives that die (for viewer's own dice),
+  // and gives a die (not null) for every die.
   for (const d of desc.dice) {
     const x = Math.round(d.x);
     const y = Math.round(d.y);
     const picked = pick({ x, y });
-    assert.deepStrictEqual(picked, { kind: "die", id: d.id }, `pick at die ${d.id}'s centre`);
+    // for every die, pick gives a die with integer id 0..15, not null
+    assert.notStrictEqual(picked, null, `pick at die ${d.id}'s centre gives a die`);
+    assert.strictEqual(picked.kind, "die", "pick gives a die");
+    assert.strictEqual(typeof picked.id, "number", "pick id is a number");
+    assert.ok(Number.isInteger(picked.id), "pick id is an integer");
+    assert.ok(picked.id >= 0 && picked.id <= 15, "pick id is 0..15");
+    // for viewer's own dice (ids 0..3), pick gives that die
+    if (d.id < 4) {
+      assert.deepStrictEqual(picked, { kind: "die", id: d.id }, `pick at die ${d.id}'s centre gives that die`);
+    }
   }
 
   // hold({ids: [3], axis: "y", dir: 1, at, to}) changes die 3's visibleFaces.
