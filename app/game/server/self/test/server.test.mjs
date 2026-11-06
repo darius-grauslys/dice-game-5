@@ -10,6 +10,7 @@ import {
   Action,
   Reply,
   Message,
+  facesFor,
 } from "../../../../../common/index.mjs";
 import * as server from "../index.mjs";
 
@@ -113,4 +114,89 @@ test("step: pure — does not mutate the input game", () => {
   assert.notStrictEqual(g, game);
   // game should be unchanged (version still 0)
   assert.strictEqual(game.version, 0);
+});
+
+function groupsOf(game) {
+  return game.players.map((p) =>
+    p.queue.groups.map((g) => g.dice.map((d) => [d.id, d.o]))
+  );
+}
+
+test("init({seed: 2}) emits game with faces, rng, turn, version, last.change and groups", async () => {
+  let emitted = null;
+  const up = {
+    poll() {
+      throw new Error("poll should not be called in init");
+    },
+    emit(msg) {
+      emitted = msg;
+    },
+  };
+  await server.init({ seed: 2 }, up);
+  assert.ok(emitted);
+  assert.strictEqual(emitted.type, "game");
+  const g = emitted.body;
+  assert.deepStrictEqual(g.faces, [
+    [3, 6, 4, 5, 2, 1],
+    [1, 6, 5, 4, 2, 3],
+    [2, 4, 6, 1, 5, 3],
+    [4, 1, 3, 5, 2, 6],
+  ]);
+  assert.deepStrictEqual(g.faces, facesFor(2));
+  assert.strictEqual(g.rng, 3535249234);
+  assert.strictEqual(g.turn, 0);
+  assert.strictEqual(g.version, 0);
+  assert.strictEqual(g.last.change, "deal");
+  assert.deepStrictEqual(groupsOf(g), [
+    [[[0, 17]], [[1, 22]], [[2, 19]], [[3, 8]]],
+    [[[4, 11]], [[5, 21]], [[6, 9], [7, 9]]],
+    [[[8, 21]], [[9, 20]], [[10, 19]], [[11, 13]]],
+    [[[12, 7]], [[13, 17]], [[14, 11]], [[15, 16]]],
+  ]);
+});
+
+test("init({seed: 1}) emits game with facesFor(1)", async () => {
+  let emitted = null;
+  const up = {
+    poll() {
+      throw new Error("poll should not be called in init");
+    },
+    emit(msg) {
+      emitted = msg;
+    },
+  };
+  await server.init({ seed: 1 }, up);
+  assert.ok(emitted);
+  assert.deepStrictEqual(emitted.body.faces, [
+    [5, 3, 6, 1, 4, 2],
+    [2, 3, 4, 5, 6, 1],
+    [1, 6, 3, 5, 4, 2],
+    [6, 5, 1, 4, 3, 2],
+  ]);
+});
+
+test("step keeps faces: the returned game has the same faces as the input", () => {
+  const players = [];
+  for (let s = 0; s < 4; s++) {
+    const groups = [];
+    for (let i = 0; i < 4; i++) {
+      const die = Die({ id: 4 * s + i, o: 0 });
+      groups.push(Group({ dice: [die] }));
+    }
+    const queue = Queue({ groups });
+    players.push(Player({ seat: s, queue }));
+  }
+  const game = Game({
+    players,
+    turn: 0,
+    version: 0,
+    rng: 0,
+    last: null,
+    winner: null,
+    faces: facesFor(2),
+  });
+  const action = Action({ id: "a1", seat: 0, move: "turn", axis: "x", dir: 1, version: 0 });
+  const [g, reply] = server.step(game, action);
+  assert.strictEqual(reply.ok, true);
+  assert.deepStrictEqual(g.faces, game.faces);
 });
