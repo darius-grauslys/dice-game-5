@@ -113,6 +113,10 @@ export async function _sheo_check() {
     { groups: [[[0, 0], [1, 0]], [[2, 2], [3, 2]]], expected: true },
     { groups: [[[0, 0], [1, 0]], [[2, 3], [3, 3]]], expected: true },
     { groups: [[[0, 0], [1, 0]], [[2, 4], [3, 4]]], expected: false },
+    { groups: [[[2, 0], [3, 20], [0, 0], [1, 0]]], expected: true },
+    { groups: [[[0, 0], [1, 0], [2, 9], [3, 0]]], expected: true },
+    { groups: [[[0, 0], [1, 0], [2, 9], [3, 9]]], expected: false },
+    { groups: [[[0, 0], [1, 0], [2, 0], [3, 0]]], expected: false },
     { groups: [[[0, 0], [1, 0]], [[2, 0]], [[3, 0]]], expected: false },
     { groups: [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]], expected: false },
   ];
@@ -141,12 +145,12 @@ export async function _sheo_check() {
 
   // 3. tie rank golden value
   const tieGamePlayers = [
-    mk(0, [[[0, 0], [1, 0]], [[2, 5], [3, 5]]]),
-    mk(1, [[[4, 0], [5, 0]], [[6, 1], [7, 1]]]),
+    mk(0, [[[0, 0], [1, 0]], [[2, 0], [3, 0]]]),
+    mk(1, [[[4, 0], [5, 0]], [[6, 0], [7, 0]]]),
     mk(2, [[[8, 0], [9, 0], [10, 0], [11, 0]]]),
-    mk(3, [[[12, 0], [13, 0], [14, 0]], [[15, 2]]]),
+    mk(3, [[[12, 0], [13, 0], [14, 0]], [[15, 0]]]),
   ];
-  const tieGame = Game({ players: tieGamePlayers, turn: 2, version: 9, rng: 7, last: null, winner: 2 });
+  const tieGame = Game({ players: tieGamePlayers, turn: 0, version: 3, rng: 7, last: null, winner: 2 });
   assert.deepStrictEqual(rank(tieGame), [
     { "seat": 2, "rank": 1, "largest": 4, "groups": 1 },
     { "seat": 3, "rank": 2, "largest": 3, "groups": 1 },
