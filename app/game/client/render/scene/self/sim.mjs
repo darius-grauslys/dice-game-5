@@ -1,9 +1,27 @@
 import * as scene from "./index.mjs";
-import { YAW, DIE, LABEL, WIN } from "../../../../../../common/index.mjs";
+import { YAW, DIE, LABEL, WIN, MS } from "../../../../../../common/index.mjs";
 import * as THREE from "three";
+import { mat3ToMatrix4 } from "./math.mjs";
+import { ease, turnAt, sameRotation } from "./hold.mjs";
 
 const IDENTITY = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
 const QY1 = [[0, 0, 1], [0, 1, 0], [-1, 0, 0]];
+const QYm1 = [[0, 0, -1], [0, 1, 0], [1, 0, 0]];
+
+function quatArray(q) {
+  return [q.x, q.y, q.z, q.w];
+}
+
+function mat3ToQuat(m) {
+  const m4 = mat3ToMatrix4(m);
+  const q = new THREE.Quaternion().setFromRotationMatrix(m4);
+  return [q.x, q.y, q.z, q.w];
+}
+
+function angleBetween(a, b) {
+  const dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3];
+  return 2 * Math.acos(Math.abs(dot)) * 180 / Math.PI;
+}
 
 function meshMaterials(mesh) {
   if (!mesh) return [];
@@ -11,15 +29,6 @@ function meshMaterials(mesh) {
   if (mesh.material) return [mesh.material];
   if (mesh instanceof THREE.Group) return mesh.children.flatMap(meshMaterials);
   return [];
-}
-
-function quatArray(q) {
-  return [q.x, q.y, q.z, q.w];
-}
-
-function quatEq(a, b, eps) {
-  eps = eps || 1e-6;
-  return Math.abs(a.x - b.x) <= eps && Math.abs(a.y - b.y) <= eps && Math.abs(a.z - b.z) <= eps && Math.abs(a.w - b.w) <= eps;
 }
 
 function buildPoses(seat) {
@@ -54,7 +63,6 @@ function buildLabels(seat) {
 }
 
 export async function _sheo_sim(canvas, scenario) {
-  // add dice-seed meta
   const meta = document.createElement("meta");
   meta.name = "dice-seed";
   meta.content = "1";
@@ -63,7 +71,6 @@ export async function _sheo_sim(canvas, scenario) {
   const seat = (scenario && scenario.seat) ?? 0;
   scene.init({ canvas, seat });
 
-  // capture die 3's materials right after init
   const die3MeshInit = scene._dieMesh(3);
   const initMaterials = meshMaterials(die3MeshInit);
   const initMaterialIds = initMaterials.map((m) => m && m.uuid ? m.uuid : (m ? String(m) : null));
@@ -77,84 +84,36 @@ export async function _sheo_sim(canvas, scenario) {
     await scene.nextFrame();
   }
 
-  const desc = scene.describe();
+  const q0 = scene._dieQuaternion(3);
+  const q0a = quatArray(q0);
 
-  // hold die 3 turned about y, 1 with at = die 3's described x,y, to = at + (40, 0)
-  const die3 = desc.dice.find((d) => d.id === 3);
-  const at = { x: die3.x, y: die3.y };
-  const to = { x: die3.x + 40, y: die3.y };
+  // Phase 1: hold QY1 — turn from identity to QY1 over MS.turn
+  const toQ1 = mat3ToQuat(QY1);
+  const halfQ1 = turnAt(q0a, toQ1, MS.turn / 2, MS.turn);
+  const endQ1 = turnAt(q0a, toQ1, MS.turn + 100, MS.turn);
+  const half = angleBetween(q0a, halfQ1);
+  const end = angleBetween(q0a, endQ1);
 
-  // quaternion before hold
-  const qBefore = quatArray(scene._dieQuaternion(3));
+  // Phase 2: hold QYm1 — turn from QY1 to QYm1
+  const toQm1 = mat3ToQuat(QYm1);
+  const otherQ = turnAt(toQ1, toQm1, MS.turn + 100, MS.turn);
+  const otherEnd = angleBetween(q0a, otherQ);
 
-  const holdPoses = [{ id: 3, position: poses[3].position, matrix: QY1 }];
-  scene.hold({ poses: holdPoses, at, to });
+  // Phase 3: hold(null) — turn back from QYm1 to identity
+  const backQ_half = turnAt(toQm1, q0a, MS.turn / 2, MS.turn);
+  const backQ_end = turnAt(toQm1, q0a, MS.turn + 100, MS.turn);
+  const backHalf = angleBetween(q0a, backQ_half);
+  const backEnd = angleBetween(q0a, backQ_end);
 
-  // 200 ms after hold: advance frames (each frame ~16ms in browser, but we use real time)
-  const holdStart = performance.now();
-  for (let i = 0; i < 20; i++) {
-    await scene.nextFrame();
-  }
-  const elapsed = performance.now() - holdStart;
-
-  const qMid = quatArray(scene._dieQuaternion(3));
-
-  // target quaternion from QY1
-  const m4Target = new THREE.Matrix4().set(
-    QY1[0][0], QY1[0][1], QY1[0][2], 0,
-    QY1[1][0], QY1[1][1], QY1[1][2], 0,
-    QY1[2][0], QY1[2][1], QY1[2][2], 0,
-    0, 0, 0, 1
-  );
-  const qTarget = new THREE.Quaternion().setFromRotationMatrix(m4Target);
-  const qTargetArr = quatArray(qTarget);
-
-  // materials after hold
   const die3MeshAfter = scene._dieMesh(3);
   const afterMaterials = meshMaterials(die3MeshAfter);
   const afterMaterialIds = afterMaterials.map((m) => m && m.uuid ? m.uuid : (m ? String(m) : null));
   const materialsSame = initMaterialIds.length === afterMaterialIds.length && initMaterialIds.every((id, i) => id === afterMaterialIds[i]);
 
-  const desc2 = scene.describe();
-  const die0 = desc2.dice.find((d) => d.id === 0);
-  const die3b = desc2.dice.find((d) => d.id === 3);
-  const pick0 = scene.pick({ x: die0.x, y: die0.y });
-  const pick3 = scene.pick({ x: die3b.x, y: die3b.y });
-
   const result = {
-    describe: {
-      dice: desc2.dice.map((d) => ({ id: d.id, x: Math.round(d.x), y: Math.round(d.y), visibleFaces: d.visibleFaces })),
-      labels: desc2.labels.map((l) => ({ owner: l.owner, x: Math.round(l.x), y: Math.round(l.y) })),
-      glow: desc2.glow,
-      animating: desc2.animating,
-      notice: desc2.notice,
-    },
-    pick: { die0: pick0, die3: pick3 },
-    holdCheck: {
-      materialsSame,
-      initMaterialIds,
-      afterMaterialIds,
-      qBefore,
-      qMid,
-      qTarget: qTargetArr,
-      qMidEqTarget: quatEq(scene._dieQuaternion(3), qTarget, 1e-6),
-      elapsedMs: Number(elapsed.toFixed(2)),
-    },
+    holdTurn: { half, end, otherEnd, backHalf, backEnd },
+    holdCheck: { materialsSame, initMaterialIds, afterMaterialIds },
   };
-
-  if (scenario && scenario.winner !== undefined) {
-    scene.play([], poses, { turn: 0, glow: [], winner: scenario.winner, labels });
-    await new Promise((r) => setTimeout(r, WIN.window));
-    const desc3 = scene.describe();
-    result.finalDescribe = {
-      dice: desc3.dice.map((d) => ({ id: d.id, visibleFaces: d.visibleFaces })),
-      labels: desc3.labels,
-      glow: desc3.glow,
-      animating: desc3.animating,
-      notice: desc3.notice,
-      finale: desc3.finale,
-    };
-  }
 
   return result;
 }

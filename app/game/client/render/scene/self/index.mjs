@@ -1,10 +1,11 @@
 import * as THREE from "three";
-import { FACES, YAW, CAMERA, DIE, PLAYERS, FOLLOW, GLOW, LABEL, WIN, TABLE_R } from "../../../../../../common/index.mjs";
+import { FACES, YAW, CAMERA, DIE, PLAYERS, FOLLOW, GLOW, LABEL, WIN, TABLE_R, MS } from "../../../../../../common/index.mjs";
 import * as dice from "../../../../../../edges/scene/scene_to_dice.mjs";
 import * as label from "../../../../../../edges/scene/scene_to_label.mjs";
 import * as sparks from "../../../../../../edges/scene/scene_to_sparks.mjs";
 import * as fly from "../../../../../../edges/scene/scene_to_fly.mjs";
 import { mat3ToMatrix4 } from "./math.mjs";
+import { ease, turnAt, sameRotation } from "./hold.mjs";
 
 // pip positions for die face values 1-6 (fractional 0..1)
 const PIPS = {
@@ -30,7 +31,7 @@ let rafId = null;
 let firstPlayDone = false;
 let playStart = 0;
 let posesById = {};
-let holdState = null; // {poses, at, to, lastHoldPoses, holdStart, holdPosesById}
+let holdState = null; // {poses, at, to, holdPosesById, turns: {[id]: {from, to, start}}, turningBack}
 let finaleState = null; // {started: bool, tracksEnd: number}
 let glowT0 = 0;
 let dustAnchor = null;
@@ -238,28 +239,56 @@ function setDiePose(mesh, position, matrix) {
   mesh.quaternion.setFromRotationMatrix(m4);
 }
 
+function quatArray(q) {
+  return [q.x, q.y, q.z, q.w];
+}
+
+function quaternionToMatrix3(q) {
+  const m4 = new THREE.Matrix4().setFromQuaternion(q);
+  const e = m4.elements;
+  return [
+    [e[0], e[1], e[2]],
+    [e[4], e[5], e[6]],
+    [e[8], e[9], e[10]],
+  ];
+}
+
 function play(tracksInput, posesInput, state) {
   playStart = performance.now();
   tracks = tracksInput || [];
   posesById = {};
   for (const p of posesInput) posesById[p.id] = p;
 
-  // end hold
-  holdState = null;
-
-  // end any running tracks: reset track positions to poses
   const trackById = {};
   for (const tr of tracks) trackById[tr.id] = tr;
+
+  // capture mesh position/rotation for held/turning-back dice before ending hold
+  const meshFrom = {};
+  if (holdState && holdState.holdPosesById) {
+    for (const idStr of Object.keys(holdState.holdPosesById)) {
+      const id = Number(idStr);
+      const tr = trackById[id];
+      if (tr) {
+        meshFrom[id] = {
+          position: [diceMeshes[id].position.x, diceMeshes[id].position.y, diceMeshes[id].position.z],
+          matrix: quaternionToMatrix3(diceMeshes[id].quaternion),
+        };
+      }
+    }
+  }
+
+  // end hold
+  holdState = null;
 
   // show all dice at their poses (except tracked ones handled in tickTracks)
   for (let i = 0; i < 16; i++) {
     diceMeshes[i].visible = true;
     const tr = trackById[i];
     if (tr) {
-      // starts at track.from (or hold position if held)
-      const hp = holdState && holdState.holdPosesById && holdState.holdPosesById[i];
-      if (hp) {
-        setDiePose(diceMeshes[i], hp.position, hp.matrix);
+      // starts at mesh position/rotation if held or turning back, else track.from
+      if (meshFrom[i]) {
+        setDiePose(diceMeshes[i], meshFrom[i].position, meshFrom[i].matrix);
+        tr.from = meshFrom[i];
       } else {
         setDiePose(diceMeshes[i], tr.from.position, tr.from.matrix);
       }
@@ -392,30 +421,45 @@ function tickTracks(dt) {
 
 function tickHold(dt) {
   if (!holdState) return;
-  const { poses, at, to, holdPosesById } = holdState;
-  // for held dice, show at hold poses, lifted and moved by drag
-  for (const id of Object.keys(holdPosesById)) {
+  const { poses, at, to, holdPosesById, turns, turningBack } = holdState;
+  const now = performance.now();
+
+  for (const idStr of Object.keys(holdPosesById)) {
+    const id = Number(idStr);
     const p = holdPosesById[id];
-    const yTarget = p.position[1];
-    const worldAt = canvasToWorldPoint(at.x, at.y, yTarget);
-    const worldTo = canvasToWorldPoint(to.x, to.y, yTarget);
-    let worldDx = 0, worldDz = 0;
-    if (worldAt && worldTo) {
-      worldDx = worldTo.x - worldAt.x;
-      worldDz = worldTo.z - worldAt.z;
+
+    // Position
+    if (turningBack) {
+      const pose = posesById[id];
+      diceMeshes[id].position.set(pose.position[0], pose.position[1], pose.position[2]);
+    } else {
+      const yTarget = p.position[1];
+      const worldAt = canvasToWorldPoint(at.x, at.y, yTarget);
+      const worldTo = canvasToWorldPoint(to.x, to.y, yTarget);
+      let worldDx = 0, worldDz = 0;
+      if (worldAt && worldTo) {
+        worldDx = worldTo.x - worldAt.x;
+        worldDz = worldTo.z - worldAt.z;
+      }
+      const dragLen = Math.hypot(worldDx, worldDz);
+      const maxLen = FOLLOW.max;
+      const scale = dragLen > maxLen ? maxLen / dragLen : 1;
+      const scaledDx = worldDx * scale;
+      const scaledDz = worldDz * scale;
+      diceMeshes[id].position.set(
+        p.position[0] + scaledDx,
+        p.position[1] + FOLLOW.lift,
+        p.position[2] + scaledDz
+      );
     }
-    const dragLen = Math.hypot(worldDx, worldDz);
-    const maxLen = FOLLOW.max;
-    const scale = dragLen > maxLen ? maxLen / dragLen : 1;
-    const scaledDx = worldDx * scale;
-    const scaledDz = worldDz * scale;
-    diceMeshes[id].position.set(
-      p.position[0] + scaledDx,
-      p.position[1] + FOLLOW.lift,
-      p.position[2] + scaledDz
-    );
-    const m4 = mat3ToMatrix4(p.matrix);
-    diceMeshes[id].quaternion.setFromRotationMatrix(m4);
+
+    // Rotation: slerp over MS.turn
+    const turn = turns && turns[id];
+    if (turn) {
+      const elapsed = now - turn.start;
+      const q = turnAt(turn.from, turn.to, elapsed, MS.turn);
+      diceMeshes[id].quaternion.set(q[0], q[1], q[2], q[3]);
+    }
   }
 }
 
@@ -546,13 +590,48 @@ function canvasToWorldPoint(cx, cy, yTarget) {
 
 function hold(h) {
   if (h === null) {
-    holdState = null;
+    // turning back to play poses
+    if (holdState && holdState.holdPosesById) {
+      const now = performance.now();
+      const turns = {};
+      for (const idStr of Object.keys(holdState.holdPosesById)) {
+        const id = Number(idStr);
+        const pose = posesById[id];
+        const fromQ = quatArray(diceMeshes[id].quaternion);
+        const toM4 = mat3ToMatrix4(pose.matrix);
+        const toQ = new THREE.Quaternion().setFromRotationMatrix(toM4);
+        turns[id] = { from: fromQ, to: [toQ.x, toQ.y, toQ.z, toQ.w], matrix: pose.matrix, start: now };
+      }
+      holdState = {
+        poses: null, at: null, to: null,
+        holdPosesById: holdState.holdPosesById,
+        turns,
+        turningBack: true,
+      };
+    } else {
+      holdState = null;
+    }
     return;
   }
   const { poses, at, to } = h;
   const holdPosesById = {};
   for (const p of poses) holdPosesById[p.id] = p;
-  holdState = { poses, at, to, holdPosesById, lastHoldPoses: null, holdStart: performance.now() };
+
+  const now = performance.now();
+  const turns = {};
+  for (const p of poses) {
+    const id = p.id;
+    const existing = holdState && holdState.turns ? holdState.turns[id] : null;
+    if (existing && sameRotation(existing.matrix, p.matrix)) {
+      turns[id] = existing; // keep running turn
+    } else {
+      const fromQ = quatArray(diceMeshes[id].quaternion);
+      const toM4 = mat3ToMatrix4(p.matrix);
+      const toQ = new THREE.Quaternion().setFromRotationMatrix(toM4);
+      turns[id] = { from: fromQ, to: [toQ.x, toQ.y, toQ.z, toQ.w], matrix: p.matrix, start: now };
+    }
+  }
+  holdState = { poses, at, to, holdPosesById, turns, turningBack: false };
 }
 
 function pick({ x, y }) {

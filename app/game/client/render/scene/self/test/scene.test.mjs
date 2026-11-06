@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mat3ToMatrix4, worldToRowNormal, visibleFaces, FACE_ORDER } from "../math.mjs";
+import { ease, turnAt, sameRotation } from "../hold.mjs";
 import { YAW, CAMERA, FACES } from "../../../../../../../common/index.mjs";
 
 test("mat3ToMatrix4: identity", () => {
@@ -57,4 +58,38 @@ test("FACE_ORDER matches face order", () => {
   for (const f of FACE_ORDER) {
     assert.ok(FACES[f] >= 1 && FACES[f] <= 6, `face ${f} has value ${FACES[f]}`);
   }
+});
+
+test("ease: 0, 0.5, 1, 2", () => {
+  assert.strictEqual(ease(0), 0);
+  assert.strictEqual(ease(0.5), 0.5);
+  assert.strictEqual(ease(1), 1);
+  assert.strictEqual(ease(2), 1);
+});
+
+function quatAngle(from, q) {
+  const dot = from[0] * q[0] + from[1] * q[1] + from[2] * q[2] + from[3] * q[3];
+  return 2 * Math.acos(Math.abs(dot)) * 180 / Math.PI;
+}
+
+test("turnAt: identity to quarter y, 0, ms/2, ms, 2ms", () => {
+  const from = [0, 0, 0, 1];
+  const to = [0, Math.SQRT1_2, 0, Math.SQRT1_2];
+  const ms = 250;
+  let a0 = quatAngle(from, turnAt(from, to, 0, ms));
+  let a1 = quatAngle(from, turnAt(from, to, ms / 2, ms));
+  let a2 = quatAngle(from, turnAt(from, to, ms, ms));
+  let a3 = quatAngle(from, turnAt(from, to, 2 * ms, ms));
+  assert.ok(Math.abs(a0 - 0) < 0.5, `a0=${a0}`);
+  assert.ok(Math.abs(a1 - 45) < 0.5, `a1=${a1}`);
+  assert.ok(Math.abs(a2 - 90) < 0.5, `a2=${a2}`);
+  assert.ok(Math.abs(a3 - 90) < 0.5, `a3=${a3}`);
+});
+
+test("sameRotation: copy true, diff false", () => {
+  const a = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const b = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const c = [[1 + 1e-6, 0, 0], [0, 1, 0], [0, 0, 1]];
+  assert.ok(sameRotation(a, b));
+  assert.ok(!sameRotation(a, c));
 });
