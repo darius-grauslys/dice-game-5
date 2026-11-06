@@ -6,8 +6,9 @@ let playing = false;
 let playlist = [];
 let currentTrack = null;
 let rafId = null;
-let started = false;
 let currentVolume = 0;
+let initialPlayRefused = false;
+let gestureHandled = false;
 
 export function fade(currentTime, duration) {
   if (!Number.isFinite(duration)) return 1;
@@ -63,6 +64,7 @@ export function init({ canvas }) {
     .then((r) => r.json())
     .then((list) => {
       playlist = list;
+      startMusic();
     })
     .catch((e) => {
       console.error(e);
@@ -89,17 +91,23 @@ export function init({ canvas }) {
     }, 1500);
   });
 
-  function startOnGesture() {
-    if (started) return;
-    started = true;
+  function startMusic() {
     if (playlist.length > 0) {
       const idx = Math.floor(Math.random() * playlist.length);
       currentTrack = playlist[idx];
       loadAndPlay(currentTrack);
     }
   }
-  document.addEventListener("pointerdown", startOnGesture);
-  document.addEventListener("keydown", startOnGesture);
+
+  function startOnGesture() {
+    if (gestureHandled) return;
+    if (!initialPlayRefused) return;
+    gestureHandled = true;
+    startMusic();
+  }
+  document.addEventListener("pointerdown", startOnGesture, true);
+  document.addEventListener("keydown", startOnGesture, true);
+  document.addEventListener("touchstart", startOnGesture, true);
 }
 
 function loadAndPlay(url) {
@@ -108,5 +116,9 @@ function loadAndPlay(url) {
   playing = false;
   audioEl.play().then(() => {
     playing = true;
-  }).catch(() => {});
+  }).catch((e) => {
+    if (e && e.name === "NotAllowedError") {
+      initialPlayRefused = true;
+    }
+  });
 }
