@@ -755,3 +755,12 @@ function diceFacesPerm(owner) {
 }
 
 export { init, nextFrame, play, hold, notice, pick, describe };
+
+// test helpers: expose the die mesh and its quaternion
+export function _dieQuaternion(id) {
+  return diceMeshes[id].quaternion;
+}
+
+export function _dieMesh(id) {
+  return diceMeshes[id].children[0];
+}
