@@ -223,42 +223,45 @@ export async function _sheo_check() {
   // ---------- begin: a short game through begin() ----------
   {
     const emitted = [];
-    let ai = 0;
-    let pollCount = 0;
     const actions = [
-      { id: "a1", seat: 0, move: "turn", axis: "x", dir: -1 },
-      { id: "a2", seat: 1, move: "turn", axis: "z", dir: 1 },
-      { id: "a3", seat: 2, move: "turn", axis: "z", dir: 1 },
-      { id: "a4", seat: 3, move: "turn", axis: "x", dir: 1 },
+      Action({ id: "a1", seat: 0, move: "turn", axis: "x", dir: -1, version: 0 }),
+      Action({ id: "a2", seat: 1, move: "turn", axis: "z", dir: 1, version: 1 }),
+      Action({ id: "a3", seat: 2, move: "turn", axis: "z", dir: 1, version: 2 }),
+      Action({ id: "a4", seat: 3, move: "turn", axis: "x", dir: 1, version: 3 }),
     ];
+    let ai = 0;
     const up = Up({
       poll: async ({ wait }) => {
-        pollCount++;
-        if (pollCount > 200) throw new Error("begin: too many polls, no winner");
-        const a = actions[ai % 4];
-        const version = ai;
-        ai++;
-        return [Message.action(Action({ ...a, version }))];
+        if (ai < actions.length) {
+          const a = actions[ai];
+          ai++;
+          return [a];
+        }
+        if (wait) throw new Error("begin: poll with no actions");
+        return [];
       },
       emit: (msg) => { emitted.push(msg); },
     });
 
-    await init({ seed: 2 }, up);
+    await init({ seed: 9 }, up);
     await begin();
 
-    // begin emitted replies for each action it processed
+    // assert: exactly 4 replies, each ok: true, reason: null, to: "a1".."a4", seat: 0..3
     const replies = emitted.filter((m) => m.type === "reply");
-    assert.ok(replies.length >= 1, "begin emitted replies");
-    for (const r of replies) {
-      const body = r.body;
+    assert.strictEqual(replies.length, 4, "begin emitted exactly 4 replies");
+    for (let i = 0; i < 4; i++) {
+      const body = replies[i].body;
       assert.strictEqual(body.kind, "reply");
-      assert.ok(["a1", "a2", "a3", "a4"].includes(body.to));
+      assert.strictEqual(body.ok, true);
+      assert.strictEqual(body.reason, null);
+      assert.strictEqual(body.to, `a${i + 1}`);
+      assert.strictEqual(body.seat, i);
     }
-    // at least one game message emitted when version changed
+    // at least one game message
     const games = emitted.filter((m) => m.type === "game");
     assert.ok(games.length >= 1, "begin emitted game messages");
-    // begin returns once the kept game has a winner
+    // the last emitted game has winner: 3
     const lastGame = games[games.length - 1].body;
-    assert.notStrictEqual(lastGame.winner, null, "begin returned with a winner");
+    assert.strictEqual(lastGame.winner, 3, "last emitted game has winner 3");
   }
 }
