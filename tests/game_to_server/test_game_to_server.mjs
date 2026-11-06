@@ -47,7 +47,7 @@ export function step(game, action) {
       throw new Error("step: g must be a Game");
     if (g.version !== game.version + 1)
       throw new Error("step: g.version must be game.version + 1");
-    if (g.faces !== game.faces)
+    if (JSON.stringify(g.faces) !== JSON.stringify(game.faces))
       throw new Error("step: g.faces must equal game.faces");
   } else {
     if (!REASONS.includes(reply.reason))
@@ -149,7 +149,7 @@ export async function _sheo_check() {
     assert.strictEqual(reply.ok, true);
     assert.strictEqual(reply.reason, null);
     assert.strictEqual(g.kind, "game");
-    assert.strictEqual(g.faces, game.faces, "step keeps faces");
+    assert.deepStrictEqual(g.faces, game.faces, "step keeps faces");
   }
 
   // ---------- step: purity ----------
