@@ -121,15 +121,16 @@ export async function _sheo_check() {
 
   // show(null, game): draws 16 dice
   show(null, game);
+  await nextFrame();
 
-  // describe().dice has 16 dice
+  // describe().dice has 16 dice, entries are {id, x, y, visibleFaces}
   const desc = describe();
   assert.strictEqual(desc.dice.length, 16, "describe().dice has 16 dice");
   for (const d of desc.dice) {
-    assert.strictEqual(d.kind, "die", "describe().dice[i].kind is die");
     assert.ok("id" in d, "describe().dice[i] has id");
-    assert.ok("centre" in d, "describe().dice[i] has centre");
-    assert.ok("x" in d.centre && "y" in d.centre, "describe().dice[i].centre has x, y");
+    assert.strictEqual(typeof d.id, "number", "describe().dice[i].id is a number");
+    assert.ok("x" in d, "describe().dice[i] has x");
+    assert.ok("y" in d, "describe().dice[i] has y");
     assert.ok("visibleFaces" in d, "describe().dice[i] has visibleFaces");
   }
 
@@ -143,7 +144,9 @@ export async function _sheo_check() {
 
   // pick at a die's described centre gives that die.
   for (const d of desc.dice) {
-    const picked = pick({ x: d.centre.x, y: d.centre.y });
+    const x = Math.round(d.x);
+    const y = Math.round(d.y);
+    const picked = pick({ x, y });
     assert.deepStrictEqual(picked, { kind: "die", id: d.id }, `pick at die ${d.id}'s centre`);
   }
 
