@@ -66,7 +66,7 @@ export const GLOW = deepFreeze({ colour: "#ffd84a", periodMs: 2000, min: 0.35, m
 // stands, for the viewer's own row, a row at the side, and the row across; `beyond` is left over.
 export const LABEL = deepFreeze({ beyond: 1.4, height: 1.5, size: 0.8, out: { own: 4.1, side: 2.3, far: 4.2 } });
 
-export const WIN = deepFreeze({ label: 2000, labelMs: 1500, window: 5500 });
+export const WIN = deepFreeze({ label: 2000, labelMs: 1500, window: 5500, restart: 8000 });
 
 // FACE_PERMS: every ordering of [1,2,3,4,5,6]: 720 arrays, lexicographic order.
 // Computed once at load; the module still exports only data.
