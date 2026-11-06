@@ -67,6 +67,21 @@ export async function begin() {
   return res;
 }
 
+export async function next(input) {
+  // A) check args
+  if (input === null || typeof input !== "object" || Array.isArray(input))
+    throw new Error("next: expected an object {seed}");
+  if (!("seed" in input)) throw new Error("next: missing seed");
+  if (!Number.isSafeInteger(input.seed))
+    throw new Error("next: seed must be a safe integer");
+  // B) call real
+  const res = await real.next(input);
+  // C) check it returned
+  // D) check return: Promise<void>
+  if (res !== undefined) throw new Error("next: expected void");
+  return res;
+}
+
 // ---- _sheo_check ----
 
 export async function _sheo_check() {
@@ -263,5 +278,61 @@ export async function _sheo_check() {
     // the last emitted game has winner: 3
     const lastGame = games[games.length - 1].body;
     assert.strictEqual(lastGame.winner, 3, "last emitted game has winner 3");
+  }
+
+  // ---------- next: after a win ----------
+  {
+    const emitted = [];
+    const actions = [
+      Action({ id: "a1", seat: 0, move: "turn", axis: "x", dir: -1, version: 0 }),
+      Action({ id: "a2", seat: 1, move: "turn", axis: "z", dir: 1, version: 1 }),
+      Action({ id: "a3", seat: 2, move: "turn", axis: "z", dir: 1, version: 2 }),
+      Action({ id: "a4", seat: 3, move: "turn", axis: "x", dir: 1, version: 3 }),
+    ];
+    let ai = 0;
+    const up = Up({
+      poll: async ({ wait }) => {
+        if (ai < actions.length) {
+          const a = actions[ai];
+          ai++;
+          return [Message.action(a)];
+        }
+        if (wait) throw new Error("begin: poll with no actions");
+        return [];
+      },
+      emit: (msg) => { emitted.push(msg); },
+    });
+
+    await init({ seed: 9 }, up);
+    await begin();
+
+    // After those four actions the kept game is won: version: 4, winner: 3.
+    const gamesBefore = emitted.filter((m) => m.type === "game");
+    const lastBefore = gamesBefore[gamesBefore.length - 1].body;
+    assert.strictEqual(lastBefore.version, 4, "kept game version after begin is 4");
+    assert.strictEqual(lastBefore.winner, 3, "kept game winner after begin is 3");
+
+    await next({ seed: 10 });
+
+    // next emits exactly one game Message
+    const gamesAfter = emitted.filter((m) => m.type === "game");
+    assert.strictEqual(gamesAfter.length, gamesBefore.length + 1, "next emits exactly one more game message");
+    const nextGame = gamesAfter[gamesAfter.length - 1].body;
+
+    assert.strictEqual(nextGame.kind, "game");
+    assert.strictEqual(nextGame.version, 5, "next game version is 5");
+    assert.strictEqual(nextGame.turn, 0, "next game turn is 0");
+    assert.strictEqual(nextGame.winner, null, "next game winner is null");
+    assert.strictEqual(nextGame.rng, 3535249242, "next game rng is 3535249242");
+    assert.strictEqual(nextGame.last.kind, "last");
+    assert.strictEqual(nextGame.last.change, "deal", "next game last.change is deal");
+    assert.deepStrictEqual(nextGame.faces, [[2, 1, 3, 6, 4, 5], [2, 1, 5, 3, 4, 6], [5, 4, 1, 2, 3, 6], [5, 2, 3, 6, 1, 4]], "next game faces is facesFor(9)");
+    const groups = nextGame.players.map((p) => p.queue.groups.map((g) => g.dice.map((d) => [d.id, d.o])));
+    assert.deepStrictEqual(groups, [
+      [[[0, 17]], [[1, 6]], [[2, 3]], [[3, 4]]],
+      [[[4, 20]], [[5, 18], [6, 6]], [[7, 21]]],
+      [[[8, 11]], [[9, 6]], [[10, 0]], [[11, 2]]],
+      [[[12, 10], [13, 14]], [[14, 18]], [[15, 13]]],
+    ], "next game groups");
   }
 }
