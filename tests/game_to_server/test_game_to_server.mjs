@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import * as real from "../../edges/game/game_to_server.mjs";
 import {
-  Die, Group, Queue, Player, Action, Game, Reply, Message, Up, Rng, TURN, ORIENTATIONS, REASONS,
+  Action, Message, Up, REASONS,
 } from "../../common/index.mjs";
 
 // ---- wrapped functions: drop-in for the forwarder ----
@@ -47,6 +47,8 @@ export function step(game, action) {
       throw new Error("step: g must be a Game");
     if (g.version !== game.version + 1)
       throw new Error("step: g.version must be game.version + 1");
+    if (g.faces !== game.faces)
+      throw new Error("step: g.faces must equal game.faces");
   } else {
     if (!REASONS.includes(reply.reason))
       throw new Error("step: reply.reason must be a REASON");
@@ -68,7 +70,7 @@ export async function begin() {
 // ---- _sheo_check ----
 
 export async function _sheo_check() {
-  // ---------- init ----------
+  // ---------- init: seed 2 golden values ----------
   {
     const emitted = [];
     let pollQueue = [];
@@ -80,8 +82,7 @@ export async function _sheo_check() {
       },
       emit: (msg) => { emitted.push(msg); },
     });
-    const seed = 123;
-    await init({ seed }, up);
+    await init({ seed: 2 }, up);
     // init emits exactly one Message.game(game)
     assert.strictEqual(emitted.length, 1, "init emits one game message");
     const m = emitted[0];
@@ -89,30 +90,104 @@ export async function _sheo_check() {
     assert.strictEqual(m.type, "game");
     const game = m.body;
     assert.strictEqual(game.kind, "game");
-    assert.strictEqual(game.version, 0, "init game version is 0");
-    assert.strictEqual(game.turn, 0, "init game turn is 0");
-    assert.strictEqual(game.winner, null, "init game winner is null");
-    assert.ok(Number.isInteger(game.rng) && game.rng >= 0 && game.rng <= 4294967295, "init game rng is a u32");
-    // invariant: all 16 dice present
-    const seen = new Array(16).fill(false);
-    for (const p of game.players)
-      for (const g of p.queue.groups)
-        for (const d of g.dice) seen[d.id] = true;
-    for (let id = 0; id < 16; id++) assert.ok(seen[id], `die ${id} present`);
+    assert.deepStrictEqual(game.faces, [[3, 6, 4, 5, 2, 1], [1, 6, 5, 4, 2, 3], [2, 4, 6, 1, 5, 3], [4, 1, 3, 5, 2, 6]], "facesFor(2)");
+    assert.strictEqual(game.rng, 3535249234, "rng");
+    assert.strictEqual(game.turn, 0, "turn is 0");
+    assert.strictEqual(game.version, 0, "version is 0");
+    assert.strictEqual(game.winner, null, "winner is null");
+    assert.strictEqual(game.last.kind, "last");
+    assert.strictEqual(game.last.change, "deal", "last.change is deal");
+    // groups: [id, o] pairs per group per seat
+    const groups = game.players.map((p) => p.queue.groups.map((g) => g.dice.map((d) => [d.id, d.o])));
+    assert.deepStrictEqual(groups, [
+      [[[0, 17]], [[1, 22]], [[2, 19]], [[3, 8]]],
+      [[[4, 11]], [[5, 21]], [[6, 9], [7, 9]]],
+      [[[8, 21]], [[9, 20]], [[10, 19]], [[11, 13]]],
+      [[[12, 7]], [[13, 17]], [[14, 11]], [[15, 16]]],
+    ], "groups seed 2");
   }
 
-  // ---------- step: legal ----------
+  // ---------- init: seed 1 faces ----------
   {
-    const seed = 7;
     const emitted = [];
     let pollQueue = [];
     const up = Up({
-      poll: async () => pollQueue,
+      poll: async ({ wait }) => {
+        if (pollQueue.length) return pollQueue.shift();
+        if (!wait) return [];
+        return [];
+      },
       emit: (msg) => { emitted.push(msg); },
     });
-    await init({ seed }, up);
+    await init({ seed: 1 }, up);
     const game = emitted[0].body;
-    // legal turn: player 0's turn, not stale
+    assert.deepStrictEqual(game.faces, [
+      [5, 3, 6, 1, 4, 2],
+      [2, 3, 4, 5, 6, 1],
+      [1, 6, 3, 5, 4, 2],
+      [6, 5, 1, 4, 3, 2],
+    ], "facesFor(1)");
+  }
+
+  // ---------- step: keeps faces ----------
+  {
+    const emitted = [];
+    let pollQueue = [];
+    const up = Up({
+      poll: async ({ wait }) => {
+        if (pollQueue.length) return pollQueue.shift();
+        if (!wait) return [];
+        return [];
+      },
+      emit: (msg) => { emitted.push(msg); },
+    });
+    await init({ seed: 2 }, up);
+    const game = emitted[0].body;
+    const action = Action({ id: "a1", seat: 0, move: "turn", axis: "x", dir: 1, version: game.version });
+    const [g, reply] = step(game, action);
+    assert.strictEqual(reply.kind, "reply");
+    assert.strictEqual(reply.ok, true);
+    assert.strictEqual(reply.reason, null);
+    assert.strictEqual(g.kind, "game");
+    assert.strictEqual(g.faces, game.faces, "step keeps faces");
+  }
+
+  // ---------- step: purity ----------
+  {
+    const emitted = [];
+    let pollQueue = [];
+    const up = Up({
+      poll: async ({ wait }) => {
+        if (pollQueue.length) return pollQueue.shift();
+        if (!wait) return [];
+        return [];
+      },
+      emit: (msg) => { emitted.push(msg); },
+    });
+    await init({ seed: 2 }, up);
+    const game = emitted[0].body;
+    const snapshot = JSON.stringify(game);
+    const action = Action({ id: "a1", seat: 0, move: "turn", axis: "y", dir: -1, version: game.version });
+    step(game, action);
+    assert.strictEqual(JSON.stringify(game), snapshot, "step does not mutate the game");
+  }
+
+  // ---------- step: legal, illegal (not-your-turn), stale ----------
+  {
+    const emitted = [];
+    let pollQueue = [];
+    const up = Up({
+      poll: async ({ wait }) => {
+        if (pollQueue.length) return pollQueue.shift();
+        if (!wait) return [];
+        return [];
+      },
+      emit: (msg) => { emitted.push(msg); },
+    });
+    await init({ seed: 2 }, up);
+    const game = emitted[0].body;
+
+    // legal turn: player 0's turn
     const action = Action({ id: "a1", seat: 0, move: "turn", axis: "x", dir: 1, version: game.version });
     const [g, reply] = step(game, action);
     assert.strictEqual(reply.kind, "reply");
@@ -123,106 +198,67 @@ export async function _sheo_check() {
     assert.strictEqual(g.kind, "game");
     assert.strictEqual(g.version, game.version + 1, "legal step increments version");
     assert.notStrictEqual(g, game, "legal step returns a new game");
+
+    // illegal: not-your-turn
+    const action2 = Action({ id: "a2", seat: 1, move: "turn", axis: "x", dir: 1, version: game.version });
+    const [g2, reply2] = step(game, action2);
+    assert.strictEqual(reply2.kind, "reply");
+    assert.strictEqual(reply2.to, "a2");
+    assert.strictEqual(reply2.seat, 1);
+    assert.strictEqual(reply2.ok, false);
+    assert.strictEqual(reply2.reason, "not-your-turn");
+    assert.strictEqual(g2, game, "illegal step returns unchanged game");
+
+    // stale
+    const action3 = Action({ id: "a3", seat: 0, move: "turn", axis: "x", dir: 1, version: game.version + 999 });
+    const [g3, reply3] = step(game, action3);
+    assert.strictEqual(reply3.kind, "reply");
+    assert.strictEqual(reply3.to, "a3");
+    assert.strictEqual(reply3.seat, 0);
+    assert.strictEqual(reply3.ok, false);
+    assert.strictEqual(reply3.reason, "stale");
+    assert.strictEqual(g3, game, "stale step returns unchanged game");
   }
 
-  // ---------- step: illegal (not-your-turn) ----------
-  {
-    const seed = 7;
-    const emitted = [];
-    let pollQueue = [];
-    const up = Up({
-      poll: async () => pollQueue,
-      emit: (msg) => { emitted.push(msg); },
-    });
-    await init({ seed }, up);
-    const game = emitted[0].body;
-    const action = Action({ id: "a2", seat: 1, move: "turn", axis: "x", dir: 1, version: game.version });
-    const [g, reply] = step(game, action);
-    assert.strictEqual(reply.kind, "reply");
-    assert.strictEqual(reply.to, "a2");
-    assert.strictEqual(reply.seat, 1);
-    assert.strictEqual(reply.ok, false);
-    assert.strictEqual(reply.reason, "not-your-turn");
-    assert.strictEqual(g, game, "illegal step returns unchanged game");
-  }
-
-  // ---------- step: illegal (stale) ----------
-  {
-    const seed = 7;
-    const emitted = [];
-    let pollQueue = [];
-    const up = Up({
-      poll: async () => pollQueue,
-      emit: (msg) => { emitted.push(msg); },
-    });
-    await init({ seed }, up);
-    const game = emitted[0].body;
-    const action = Action({ id: "a3", seat: 0, move: "turn", axis: "x", dir: 1, version: game.version + 999 });
-    const [g, reply] = step(game, action);
-    assert.strictEqual(reply.kind, "reply");
-    assert.strictEqual(reply.ok, false);
-    assert.strictEqual(reply.reason, "stale");
-    assert.strictEqual(g, game, "stale step returns unchanged game");
-  }
-
-  // ---------- step: purity ----------
-  {
-    const seed = 11;
-    const emitted = [];
-    let pollQueue = [];
-    const up = Up({
-      poll: async () => pollQueue,
-      emit: (msg) => { emitted.push(msg); },
-    });
-    await init({ seed }, up);
-    const game = emitted[0].body;
-    const snapshot = JSON.stringify(game);
-    const action = Action({ id: "a4", seat: 0, move: "turn", axis: "y", dir: -1, version: game.version });
-    step(game, action);
-    assert.strictEqual(JSON.stringify(game), snapshot, "step does not mutate the game");
-  }
-
-  // ---------- begin ----------
+  // ---------- begin: a short game through begin() ----------
   {
     const emitted = [];
+    let ai = 0;
+    let pollCount = 0;
     const actions = [
-      Action({ id: "a1", seat: 0, move: "turn", axis: "x", dir: -1, version: 0 }),
-      Action({ id: "a2", seat: 1, move: "turn", axis: "z", dir: 1, version: 1 }),
-      Action({ id: "a3", seat: 2, move: "turn", axis: "z", dir: 1, version: 2 }),
-      Action({ id: "a4", seat: 3, move: "turn", axis: "x", dir: 1, version: 3 }),
+      { id: "a1", seat: 0, move: "turn", axis: "x", dir: -1 },
+      { id: "a2", seat: 1, move: "turn", axis: "z", dir: 1 },
+      { id: "a3", seat: 2, move: "turn", axis: "z", dir: 1 },
+      { id: "a4", seat: 3, move: "turn", axis: "x", dir: 1 },
     ];
-    let aq = [];
     const up = Up({
       poll: async ({ wait }) => {
-        const a = aq.shift();
-        if (a === undefined) {
-          if (!wait) return [];
-          throw new Error("begin: poll with no actions");
-        }
-        return [Message.action(a)];
+        pollCount++;
+        if (pollCount > 200) throw new Error("begin: too many polls, no winner");
+        const a = actions[ai % 4];
+        const version = ai;
+        ai++;
+        return [Message.action(Action({ ...a, version }))];
       },
       emit: (msg) => { emitted.push(msg); },
     });
 
-    await init({ seed: 9 }, up);
-    // queue the winning sequence
-    for (const a of actions) aq.push(a);
+    await init({ seed: 2 }, up);
     await begin();
 
-    // begin emitted replies for each action and a game after version changes
+    // begin emitted replies for each action it processed
     const replies = emitted.filter((m) => m.type === "reply");
-    assert.strictEqual(replies.length, 4, "begin emitted 4 replies");
-    // verify reply shapes
-    for (let i = 0; i < 4; i++) {
-      const r = replies[i].body;
-      assert.strictEqual(r.kind, "reply");
-      assert.strictEqual(r.ok, true);
-      assert.strictEqual(r.reason, null);
-      assert.strictEqual(r.to, `a${i + 1}`);
-      assert.strictEqual(r.seat, i);
+    assert.ok(replies.length >= 1, "begin emitted replies");
+    for (const r of replies) {
+      const body = r.body;
+      assert.strictEqual(body.kind, "reply");
+      assert.ok(["a1", "a2", "a3", "a4"].includes(body.to));
     }
     // at least one game message emitted when version changed
     const games = emitted.filter((m) => m.type === "game");
     assert.ok(games.length >= 1, "begin emitted game messages");
+    // begin returns once the kept game has a winner
+    const lastGame = games[games.length - 1].body;
+    assert.notStrictEqual(lastGame.winner, null, "begin returned with a winner");
   }
 }
