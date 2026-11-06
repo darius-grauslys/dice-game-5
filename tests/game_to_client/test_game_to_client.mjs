@@ -170,4 +170,49 @@ export async function _sheo_check() {
   const gameWinner = Game({ players, turn: 0, version: 1, rng: 1, last: null, winner: 0 });
   pollQueue.push(Message.game(gameWinner));
   await beginPromise;
+
+  // --- next game scenario ---
+
+  // call begin() again (don't await it yet) right after the first returned;
+  // run 30 frames: it must still be pending (it waits for the next game;
+  // the won Game it started with doesn't end it);
+  let begin2Resolved = false;
+  const beginPromise2 = begin().then(() => { begin2Resolved = true; });
+  for (let i = 0; i < 30; i++) await new Promise((r) => requestAnimationFrame(r));
+  assert.strictEqual(begin2Resolved, false, "second begin() still pending after 30 frames");
+
+  // queue a new Game, winner: null, turn: 0, a higher version (the won one's + 1),
+  // the same dice as your first Game; run frames until the ROLL button shows
+  // (give up after 3 s): client took the new game and it is seat 0's turn again;
+  // clicking it emits one roll Action with version = the new Game's;
+  const gameNext = Game({ players, turn: 0, version: 2, rng: 1, last: null, winner: null });
+  pollQueue.push(Message.game(gameNext));
+  let rollBtn2 = null;
+  const deadline2 = Date.now() + 3000;
+  while (Date.now() < deadline2) {
+    for (let i = 0; i < 5; i++) await new Promise((r) => requestAnimationFrame(r));
+    rollBtn2 = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "ROLL");
+    if (rollBtn2) break;
+  }
+  assert.ok(rollBtn2, "ROLL button shows for the new game");
+  rollBtn2.click();
+  await new Promise((r) => requestAnimationFrame(r));
+  assert.strictEqual(emittedActions.length, beforeDrag + 1, "one roll action emitted for the new game");
+  const rollAction2 = emittedActions[emittedActions.length - 1];
+  assert.strictEqual(rollAction2.kind, "action");
+  assert.strictEqual(rollAction2.move, "roll");
+  assert.strictEqual(rollAction2.seat, 0);
+  assert.strictEqual(rollAction2.version, 2, "roll action version is the new game's version");
+
+  // queue its Reply and the next Game with a winner again (version + 1):
+  // the second begin() returns (give up after 5 s).
+  const reply3 = Reply({ to: rollAction2.id, seat: 0, ok: true, reason: null });
+  pollQueue.push(Message.reply(reply3));
+  const gameWinner2 = Game({ players, turn: 0, version: 3, rng: 1, last: null, winner: 0 });
+  pollQueue.push(Message.game(gameWinner2));
+  const deadline3 = Date.now() + 5000;
+  while (!begin2Resolved && Date.now() < deadline3) {
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+  assert.strictEqual(begin2Resolved, true, "second begin() returns after the winner game");
 }

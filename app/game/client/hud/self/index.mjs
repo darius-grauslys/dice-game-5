@@ -5,6 +5,7 @@ let rollQueue = [];
 let bannerTimer = null;
 let bannerQueue = [];
 let windowShown = false;
+let windowTimer = null;
 
 // near: whether the seat is close to winning.
 // True exactly when the seat's queue is either:
@@ -161,18 +162,31 @@ export function show(prev, next) {
     processBanners();
   }
 
-  if (next.winner !== null && !windowShown) {
-    windowShown = true;
-    const w = next.winner;
-    setTimeout(() => {
-      windowEl.style.display = "";
-      const rows = rank(next)
-        .map((r) => `<tr><td>${r.rank}</td><td style="color:${PLAYERS[r.seat].colour}">P${r.seat + 1}</td><td>${r.largest}</td><td>${r.groups}</td></tr>`)
-        .join("");
-      windowEl.innerHTML =
-        `<div style="color:${PLAYERS[w].colour};font-size:28px;font-weight:bold">Player ${w + 1} wins!</div>` +
-        `<table><tr><th>rank</th><th>player</th><th>largest</th><th>groups</th></tr>${rows}</table>`;
-    }, WIN.window);
+  if (next.winner !== null) {
+    if (!windowShown && windowTimer === null) {
+      windowShown = true;
+      const w = next.winner;
+      windowTimer = setTimeout(() => {
+        windowTimer = null;
+        windowEl.style.display = "";
+        const rows = rank(next)
+          .map((r) => `<tr><td>${r.rank}</td><td style="color:${PLAYERS[r.seat].colour}">P${r.seat + 1}</td><td>${r.largest}</td><td>${r.groups}</td></tr>`)
+          .join("");
+        windowEl.innerHTML =
+          `<div style="color:${PLAYERS[w].colour};font-size:28px;font-weight:bold">Player ${w + 1} wins!</div>` +
+          `<table><tr><th>rank</th><th>player</th><th>largest</th><th>groups</th></tr>${rows}</table>`;
+      }, WIN.window);
+    }
+  } else {
+    // new game: hide the window at once and cancel a show still waiting;
+    // the next win shows it again.
+    if (windowTimer) {
+      clearTimeout(windowTimer);
+      windowTimer = null;
+    }
+    windowShown = false;
+    windowEl.style.display = "none";
+    windowEl.innerHTML = "";
   }
 }
 

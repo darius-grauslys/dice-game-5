@@ -26,7 +26,7 @@ import * as judge from "../../../../edges/server/server_to_judge.mjs";
 let keptUp;
 let keptGame;
 
-function buildBlankGame(seed) {
+function buildBlankGame(seed, version, faces) {
   const players = [];
   for (let s = 0; s < 4; s++) {
     const groups = [];
@@ -37,11 +37,11 @@ function buildBlankGame(seed) {
     const queue = Queue({ groups });
     players.push(Player({ seat: s, queue }));
   }
-  return Game({ players, turn: 0, version: 0, rng: Rng.seed(seed), last: null, winner: null, faces: facesFor(seed) });
+  return Game({ players, turn: 0, version, rng: Rng.seed(seed), last: null, winner: null, faces });
 }
 
 export async function init({ seed }, up) {
-  let game = buildBlankGame(seed);
+  let game = buildBlankGame(seed, 0, facesFor(seed));
   game = roll.deal(game);
   for (let s = 0; s < 4; s++) {
     game = settle.regroup(game, s);
@@ -49,6 +49,16 @@ export async function init({ seed }, up) {
   keptUp = up;
   keptGame = game;
   up.emit(Message.game(game));
+}
+
+export async function next({ seed }) {
+  let game = buildBlankGame(seed, keptGame.version + 1, keptGame.faces);
+  game = roll.deal(game);
+  for (let s = 0; s < 4; s++) {
+    game = settle.regroup(game, s);
+  }
+  keptGame = game;
+  keptUp.emit(Message.game(game));
 }
 
 export function step(game, action) {
