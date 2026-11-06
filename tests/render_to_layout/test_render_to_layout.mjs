@@ -96,7 +96,11 @@ function vecEq(a, b) {
 }
 
 function facesSeen(poses, viewer) {
-  const eye = CAMERA.eye;
+  const eye = [
+    YAW[viewer][0][0]*CAMERA.eye[0] + YAW[viewer][0][1]*CAMERA.eye[1] + YAW[viewer][0][2]*CAMERA.eye[2],
+    YAW[viewer][1][0]*CAMERA.eye[0] + YAW[viewer][1][1]*CAMERA.eye[1] + YAW[viewer][1][2]*CAMERA.eye[2],
+    YAW[viewer][2][0]*CAMERA.eye[0] + YAW[viewer][2][1]*CAMERA.eye[1] + YAW[viewer][2][2]*CAMERA.eye[2],
+  ];
   const rowFrameNormals = {
     "+x": [1, 0, 0], "-x": [-1, 0, 0],
     "+y": [0, 1, 0], "-y": [0, -1, 0],
