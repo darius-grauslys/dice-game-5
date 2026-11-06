@@ -235,7 +235,7 @@ export async function _sheo_check() {
         if (ai < actions.length) {
           const a = actions[ai];
           ai++;
-          return [a];
+          return [Message.action(a)];
         }
         if (wait) throw new Error("begin: poll with no actions");
         return [];
