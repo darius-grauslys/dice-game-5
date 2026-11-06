@@ -53,6 +53,12 @@ and checks your piece: a common part's tests, a node and its edges, or
 an edge's test. It prints `ok`, `pending` or `fail` per item, and fails
 the commit and the merge request the same way. Run it before you finish.
 
+For an edge test's writer, the check asks only that the test is written
+(it imports, exports `_sheo_check()`, has no `_sheo_pending`). It still
+runs the test: a failing one prints `red`, with the failure, and doesn't
+fail the check. A test may be written before the code it tests changes;
+the code's own ticket is the one that must pass it.
+
 Your view of the repository is only your piece. `tools/check.mjs` run by
 hand there can't see the nodes at the other ends of your edges (it says
 so), and `node --test` by hand skips what the gate runs. Use the forwarded

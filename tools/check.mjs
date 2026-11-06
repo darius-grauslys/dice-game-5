@@ -17,8 +17,12 @@
 //   n-<X>          X's structure (exactly one in-edge, unless X is root; its
 //                  out-edges), X is no longer a stub, and the behaviour of its
 //                  in-edge and out-edges where nothing is pending or a stub
-//   t-<X>_to_<Y>   that edge: its test is no longer pending, Y's whole subtree
-//                  is implemented, and the test passes
+//   t-<X>_to_<Y>   that edge's test is written: it imports, exports
+//                  _sheo_check() and is no longer pending. The test is run
+//                  and its result printed ("red" when it fails), but a
+//                  failure doesn't fail the check: a test may be written
+//                  before the code it tests changes (or exists: stubs under
+//                  Y are fine), and the code's own ticket is what must pass it
 //   s-<X>_to_<Y>   that edge's scaffold: forwarder, Y's stub, the test placeholder
 //   c-<part>       common/<part>: its tests (common/<part>/**/*.test.mjs, node --test);
 //                  at least one must exist
@@ -146,7 +150,7 @@ async function main() {
   if (agent === undefined && existsSync(AGENT_FILE)) agent = readFileSync(AGENT_FILE, "utf8").trim();
   agent = agent || "";
 
-  const results = [];
+  const results = []; // ok, pending, fail; and red (a t- test that fails: printed, not failed)
   const say = (state, what, detail = "") => {
     results.push(state);
     console.log(`${state.padEnd(7)} ${what}${detail ? `: ${detail}` : ""}`);
@@ -220,6 +224,23 @@ async function main() {
     return own.concat(...kids);
   }
 
+  // A t- agent's edge: the test is written (structure, not pending); its
+  // run is reported, never failed.
+  async function edgeWritten(e) {
+    const s = await edgeStructure(e);
+    if (!s.good) return;
+    if (s.pending) { say("fail", `edge ${e.name}`, "its test is still _sheo_pending: writing it removes the marker"); return; }
+    const stubs = await stubsBelow(e.to);
+    const t = await probe(e.test);
+    const r = t.browser ? await inBrowser(e.test) : await child("run", e.test, timeout);
+    const where = t.browser ? " (in Chromium)" : "";
+    const against = stubs.length ? ` (still stubs under ${e.to}: ${stubs.join(", ")})` : "";
+    if (r.ok) say("ok", `edge ${e.name}`, `_sheo_check passed${where}${against}`);
+    else say("red", `edge ${e.name}`, `_sheo_check fails against the current code${where}${against}; ` +
+      `not a failure of this check (the code's ticket must pass it):\n${indent(r.error)}` +
+      `${r.stderr ? `\n  stderr:\n${indent(r.stderr)}` : ""}`);
+  }
+
   async function edgeBehaviour(e, { strict }) {
     const s = await edgeStructure(e);
     if (!s.good) return;
@@ -265,7 +286,7 @@ async function main() {
   } else if ((m = agent.match(/^t-(.+)$/)) && byName(m[1])) {
     const e = byName(m[1]);
     console.log(`check: edge test ${e.name} (agent ${agent})`);
-    await edgeBehaviour(e, { strict: true });
+    await edgeWritten(e);
   } else if ((m = agent.match(/^s-(.+)$/)) && byName(m[1])) {
     const e = byName(m[1]);
     console.log(`check: edge scaffold ${e.name} (agent ${agent})`);
@@ -288,7 +309,8 @@ async function main() {
   }
 
   const n = (s) => results.filter((r) => r === s).length;
-  console.log(`\ncheck: ${n("ok")} ok, ${n("pending")} pending, ${n("fail")} failed`);
+  const red = n("red") ? `, ${n("red")} red (a written test the code doesn't pass yet: not a failure here)` : "";
+  console.log(`\ncheck: ${n("ok")} ok, ${n("pending")} pending, ${n("fail")} failed${red}`);
   process.exit(n("fail") ? 1 : 0);
 }
 
