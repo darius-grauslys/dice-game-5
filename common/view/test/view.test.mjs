@@ -141,7 +141,7 @@ test("phase 3 values", () => {
   assert.deepStrictEqual(FOLLOW, { max: 0.6, lift: 0.3 });
   assert.deepStrictEqual(GLOW, { colour: "#ffd84a", periodMs: 2000, min: 0.35, max: 0.9 });
   assert.deepStrictEqual(LABEL, { beyond: 1.4, height: 1.5, size: 0.8, out: { own: 4.1, side: 2.3, far: 4.2 } });
-  assert.deepStrictEqual(WIN, { label: 2000, labelMs: 1500, window: 5500 });
+  assert.deepStrictEqual(WIN, { label: 2000, labelMs: 1500, window: 5500, restart: 8000 });
 });
 
 test("FACE_PERMS structure", () => {
