@@ -141,12 +141,12 @@ export async function _sheo_check() {
 
   // 3. tie rank golden value
   const tieGamePlayers = [
-    mk(0, [[[0, 1], [2, 3]]]),
-    mk(1, [[[4, 5], [6, 7]]]),
+    mk(0, [[[0, 0], [1, 0]], [[2, 5], [3, 5]]]),
+    mk(1, [[[4, 0], [5, 0]], [[6, 1], [7, 1]]]),
     mk(2, [[[8, 0], [9, 0], [10, 0], [11, 0]]]),
-    mk(3, [[[12, 0], [13, 0], [14, 0]], [[15, 0]]]),
+    mk(3, [[[12, 0], [13, 0], [14, 0]], [[15, 2]]]),
   ];
-  const tieGame = Game({ players: tieGamePlayers, turn: 0, version: 1, rng: 7, last: null, winner: null });
+  const tieGame = Game({ players: tieGamePlayers, turn: 2, version: 9, rng: 7, last: null, winner: 2 });
   assert.deepStrictEqual(rank(tieGame), [
     { "seat": 2, "rank": 1, "largest": 4, "groups": 1 },
     { "seat": 3, "rank": 2, "largest": 3, "groups": 1 },
