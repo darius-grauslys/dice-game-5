@@ -243,7 +243,7 @@ export function Last(input) {
   return deepFreeze({ kind: "last", action, change, dice, before });
 }
 
-const GAME_FIELDS = ["players", "turn", "version", "rng", "last", "winner"];
+const GAME_FIELDS = ["players", "turn", "version", "rng", "last", "winner", "faces"];
 
 export function Game(input) {
   const f = checkFields("Game", input, GAME_FIELDS);
@@ -294,7 +294,41 @@ export function Game(input) {
         ? null
         : expectInt("Game.winner", true, f.winner, 0, 3);
   else winner = field("Game.winner", false, "null or an integer 0..3", undefined);
-  const game = { kind: "game", players, turn, version, rng, last, winner };
+  let faces;
+  if ("faces" in f) {
+    if (f.faces === null) {
+      faces = null;
+    } else {
+      if (!Array.isArray(f.faces) || f.faces.length !== 4)
+        throw typeError(
+          `Game.faces: expected null or 4 numberings (permutations of 1..6), got ${show(f.faces)}`,
+        );
+      faces = [];
+      for (let i = 0; i < 4; i++) {
+        const n = f.faces[i];
+        if (!Array.isArray(n) || n.length !== 6)
+          throw typeError(
+            `Game.faces: expected null or 4 numberings (permutations of 1..6), got ${show(f.faces)}`,
+          );
+        const seen = new Set();
+        for (const v of n) {
+          if (!isInt(v) || v < 1 || v > 6)
+            throw typeError(
+              `Game.faces: expected null or 4 numberings (permutations of 1..6), got ${show(f.faces)}`,
+            );
+          if (seen.has(v))
+            throw typeError(
+              `Game.faces: expected null or 4 numberings (permutations of 1..6), got ${show(f.faces)}`,
+            );
+          seen.add(v);
+        }
+        faces.push(n);
+      }
+    }
+  } else {
+    faces = null;
+  }
+  const game = { kind: "game", players, turn, version, rng, last, winner, faces };
   // with(patch): a new Game with the patched fields, every check running
   // again; the old Game is untouched. Non-enumerable, so it stays out of
   // Object.keys, JSON.stringify and deepStrictEqual.
