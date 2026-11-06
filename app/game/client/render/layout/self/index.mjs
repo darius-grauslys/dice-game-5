@@ -7,6 +7,8 @@
 
 import { DIE, GAP, GROUP_GAP, TABLE_R, YAW, CAMERA, ORIENTATIONS, STACK, LABEL } from "../../../../../../common/index.mjs";
 
+const { own: OUT_OWN, side: OUT_SIDE, far: OUT_FAR } = LABEL.out;
+
 function mulMatMat(A, B) {
   const r = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
   for (let i = 0; i < 3; i++)
@@ -84,7 +86,7 @@ export function place(game, viewer) {
       for (let k = 0; k < dice.length; k++) {
         const die = dice[k];
         const x = cursor + k * STACK.dx;
-        const z = TABLE_R + (k % 2 === 1 ? STACK.dz : 0);
+        const z = TABLE_R + k * STACK.dz;
         diceInfo.push({ id: die.id, o: die.o, group: g, slot, x, z });
         lastX = x;
         slot++;
@@ -133,16 +135,16 @@ export function place(game, viewer) {
 export function labels(viewer) {
   const result = [];
   for (let owner = 0; owner < 4; owner++) {
-    const c = mulMatVec(YAW[owner], [0, 0, TABLE_R]);
-    const eye = mulMatVec(YAW[viewer], CAMERA.eye);
-    const u = [c[0] - eye[0], c[2] - eye[2]];
-    const unorm = Math.hypot(u[0], u[1]);
-    const uunit = [u[0] / unorm, u[1] / unorm];
-    const position = [
-      c[0] + LABEL.beyond * uunit[0],
-      LABEL.height,
-      c[2] + LABEL.beyond * uunit[1],
-    ].map(normNum);
+    let d;
+    if (owner === viewer) {
+      d = OUT_OWN;
+    } else if ((owner - viewer + 4) % 4 === 2) {
+      d = OUT_FAR;
+    } else {
+      d = OUT_SIDE;
+    }
+    const point = [0, LABEL.height, TABLE_R + d];
+    const position = mulMatVec(YAW[owner], point).map(normNum);
     const entry = { owner, position };
     Object.freeze(entry.position);
     Object.freeze(entry);
