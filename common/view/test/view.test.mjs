@@ -38,7 +38,7 @@ test("surface values", () => {
   assert.strictEqual(DIE, 1);
   assert.strictEqual(GAP, 0.25);
   assert.strictEqual(GROUP_GAP, 0.5);
-  assert.strictEqual(TABLE_R, 4);
+  assert.strictEqual(TABLE_R, 4.6);
   assert.strictEqual(DRAG_MIN, 12);
 });
 
@@ -133,14 +133,14 @@ test("phase 3 values", () => {
     { label: "P3", colour: "#f2c200", ring: "#fff08a" },
     { label: "P4", colour: "#ff5fae", ring: "#ffc2e0" },
   ]);
-  assert.deepStrictEqual(STACK, { dx: 1.05, dz: 1 });
+  assert.deepStrictEqual(STACK, { dx: 1.05, dz: 1.05 });
   assert.deepStrictEqual(SECTORS, [
     { axis: "y", dir: 1 }, { axis: "x", dir: -1 }, { axis: "z", dir: 1 },
     { axis: "y", dir: -1 }, { axis: "x", dir: 1 }, { axis: "z", dir: -1 },
   ]);
   assert.deepStrictEqual(FOLLOW, { max: 0.6, lift: 0.3 });
   assert.deepStrictEqual(GLOW, { colour: "#ffd84a", periodMs: 2000, min: 0.35, max: 0.9 });
-  assert.deepStrictEqual(LABEL, { beyond: 1.4, height: 1.5, size: 0.8 });
+  assert.deepStrictEqual(LABEL, { beyond: 1.4, height: 1.5, size: 0.8, out: { own: 4.1, side: 2.3, far: 4.2 } });
   assert.deepStrictEqual(WIN, { label: 2000, labelMs: 1500, window: 5500 });
 });
 
