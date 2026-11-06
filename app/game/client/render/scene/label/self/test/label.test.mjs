@@ -87,6 +87,40 @@ test("P2 group bounding box is centred, LABEL.size tall, wider than tall", () =>
   assert.ok(width > height, `wider than tall: width ${width}, height ${height}`);
 });
 
+test("P2: empty gap between P's rightmost stroke and digit's leftmost stroke >= 0.3 * LABEL.size", () => {
+  const label = makeLabel({ text: "P2", colour: "#ff0000" });
+  // P's box sits at x < 0, digit's box at x > 0.
+  // P's rightmost stroke is the vertical stroke at glyph x=0.6 (largest glyph-x);
+  // digit's leftmost stroke is the vertical stroke at glyph x=0 (smallest glyph-x).
+  const pStrokes = [];
+  const dStrokes = [];
+  label.traverse((m) => {
+    if (m.isMesh) {
+      const b = new THREE.Box3().setFromObject(m);
+      // vertical strokes have y-extent > x-extent
+      const w = b.max.x - b.min.x;
+      const h = b.max.y - b.min.y;
+      if (h > w) {
+        if (m.position.x < 0) pStrokes.push(m);
+        else dStrokes.push(m);
+      }
+    }
+  });
+  // P's rightmost vertical stroke: largest position.x among P vertical strokes.
+  let pRightmost = null;
+  for (const m of pStrokes) {
+    if (pRightmost === null || m.position.x > pRightmost.position.x) pRightmost = m;
+  }
+  // Digit's leftmost vertical stroke: smallest position.x among digit vertical strokes.
+  let dLeftmost = null;
+  for (const m of dStrokes) {
+    if (dLeftmost === null || m.position.x < dLeftmost.position.x) dLeftmost = m;
+  }
+  // Gap between stroke center lines = gap between box edges = 0.4 glyph units * LABEL.size = 0.32.
+  const gap = dLeftmost.position.x - pRightmost.position.x;
+  assert.ok(gap >= 0.3 * LABEL.size, `gap ${gap} >= 0.3 * ${LABEL.size} = ${0.3 * LABEL.size}`);
+});
+
 test("vertical stroke taller than wide, horizontal stroke wider than tall", () => {
   const label = makeLabel({ text: "P1", colour: "#ff0000" });
   let hasVertical = false;

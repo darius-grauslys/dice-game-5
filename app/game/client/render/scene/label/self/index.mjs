@@ -60,19 +60,20 @@ export function makeLabel({ text, colour }) {
   }
 
   const group = new THREE.Group();
-  const charH = LABEL.size; // 0.8
-  const charW = 0.6;
-  const gap = 0.12; // 0.2 boxes (box is 0.6 wide)
+  const charH = LABEL.size; // 0.8 (1 tall scaled)
+  const charW = 0.6 * LABEL.size; // 0.6 wide scaled
   const thickness = 0.13;
 
   const chars = text.split("");
-  const totalW = chars.length * charW + (chars.length - 1) * gap;
+  // Glyph layout in glyph units: P's box spans x = 0 to 0.6; the digit's box
+  // spans x = 1.0 to 1.6 (a gap of 0.4 between the two boxes). Scale everything
+  // by LABEL.size and centre on the origin: total span 0..1.6, centre at 0.8.
+  // P box centre: 0.3 - 0.8 = -0.5; digit box centre: 1.3 - 0.8 = 0.5.
 
-  let ci = 0;
   for (const c of chars) {
     const segs = GLYPHS[c];
     if (!segs) throw new TypeError(`label.makeLabel: no glyph for ${String(c)}`);
-    const cellCenterX = -totalW / 2 + ci * (charW + gap) + charW / 2;
+    const cellCenterX = (c === "P" ? -0.5 : 0.5) * charH;
     for (const seg of segs) {
       const mesh = makeStrokeMesh(seg, charW, charH, thickness, colour);
       if (mesh) {
@@ -80,7 +81,6 @@ export function makeLabel({ text, colour }) {
         group.add(mesh);
       }
     }
-    ci++;
   }
 
   return group;
