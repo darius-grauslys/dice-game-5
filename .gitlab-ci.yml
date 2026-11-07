@@ -2,43 +2,28 @@
 # `pipeline --update` replaces it only while it is exactly as wabbajack
 # wrote it (to bring in a newer wabbajack's rules), never once edited.
 #
-# The merge gate's checks: a merge request into the default branch runs
-# .githooks/check-changes on its whole change, in the project's dev image,
-# on this project's own runner (tag sheo-ci-dice-game-5). The forge merges only once this
-# passes ("Pipelines must succeed"); cheese sends a failure back to the agent.
-#
-# First, as in an agent's run and in `cheese checks`: SHEO_AGENT, the agent
-# whose change it is, from the merge request's sheo-agent::<agent> label
-# (cheese sets it; none: unset, check everything), for the project's checks
-# to key on; then the project's setup (.wabbajack/setup) when there is one.
+# The merge gate's check: a merge request into the default branch runs this
+# job on this project's own runner (tag sheo-ci-dice-game-5). Its executor never runs the
+# script below: it has the stack check the change on the host (a fresh
+# sandbox, the project's sheo-setup, then sheo-check with the agent's
+# forge-ci, from the merge request's sheo-agent:: label), and the job fails
+# unless that passes. The forge merges only once it does ("Pipelines must
+# succeed"); cheese sends a failure back to the agent. The tests show in the
+# merge request (the JUnit report).
 #
 # A merge request into a staging group's branch (sheo-staging/<name>) gets
-# a pipeline too, so it can merge, but skips the checks: they run when the
-# group is promoted to the default branch.
+# the job too, so it can merge, and passes at once: the group's checks run
+# when it is promoted to the default branch.
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == $CI_DEFAULT_BRANCH
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^sheo-staging\//
 
-check-changes:
-  image: mcr.microsoft.com/playwright:v1.64.1-noble
+sheo-check:
   tags: [sheo-ci-dice-game-5]
-  variables:
-    GIT_DEPTH: "0"
   script:
-    - |
-      case ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-} in
-        sheo-staging/*)
-          echo "A staging group's merge skips the project's checks: they run when the group is promoted to the default branch."
-          exit 0 ;;
-      esac
-    - |
-      unset SHEO_AGENT
-      old_ifs=$IFS; IFS=,
-      for label in ${CI_MERGE_REQUEST_LABELS:-}; do
-        case $label in sheo-agent::?*) SHEO_AGENT=${label#sheo-agent::}; export SHEO_AGENT ;; esac
-      done
-      IFS=$old_ifs
-      echo "SHEO_AGENT=${SHEO_AGENT:-(none: every check)}"
-    - if [ -f .wabbajack/setup ]; then bash .wabbajack/setup; fi
-    - .githooks/check-changes "$CI_MERGE_REQUEST_DIFF_BASE_SHA...HEAD"
+    - echo "sheo's executor checks this change on the host; this script never runs"
+  artifacts:
+    when: always
+    reports:
+      junit: sheo-check.junit.xml
