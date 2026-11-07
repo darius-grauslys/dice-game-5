@@ -1,9 +1,13 @@
 import * as THREE from "three";
-import { init, dust, sparkler, step, count } from "./index.mjs";
+import { init, dust, sparkler, step, count, ring } from "./index.mjs";
+
+function radiusAround(p, anchor) {
+  const dx = p[0] - anchor[0];
+  const dz = p[2] - anchor[2];
+  return Math.sqrt(dx * dx + dz * dz);
+}
 
 export async function _sheo_sim(canvas, scenario) {
-  const cam = new THREE.Camera();
-  console.log("camera keys:", Object.keys(cam), "proto keys:", Object.keys(Object.getPrototypeOf(cam)));
   const renderer = new THREE.WebGLRenderer({ canvas, devicePixelRatio: 1 });
   renderer.setSize(800, 600);
   const origRenderBufferDirect = renderer.renderBufferDirect.bind(renderer);
@@ -25,21 +29,40 @@ export async function _sheo_sim(canvas, scenario) {
 
   init(scene);
 
-  dust([-1.5, 1.5, 0]);
-  sparkler([1.5, 1.5, 0]);
+  const a1 = [0, 1.5, 0];
+  dust(a1);
+  step(1000);
+  const r1 = ring();
+  let minR1 = Infinity, maxR1 = -Infinity;
+  for (const p of r1) {
+    const r = radiusAround(p, a1);
+    if (r < minR1) minR1 = r;
+    if (r > maxR1) maxR1 = r;
+  }
+  console.log("after 1000ms: ring().length=" + r1.length + " minR=" + (isFinite(minR1) ? minR1.toFixed(4) : "n/a") + " maxR=" + (isFinite(maxR1) ? maxR1.toFixed(4) : "n/a") + " count=" + count());
 
-  const counts = [];
-  for (let i = 0; i < 120; i++) {
-    step(16);
-    try {
-      renderer.render(scene, camera);
-    } catch (e) {
-      console.log("render error:", e.message);
-      throw e;
-    }
-    if (i === 29 || i === 59 || i === 119) counts.push(count());
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+  const a2 = [1.2, 1.5, 0.5];
+  dust(a2);
+  step(800);
+  const r2 = ring();
+  let minR2 = Infinity, maxR2 = -Infinity;
+  for (const p of r2) {
+    const r = radiusAround(p, a2);
+    if (r < minR2) minR2 = r;
+    if (r > maxR2) maxR2 = r;
+  }
+  console.log("after move+800ms: ring().length=" + r2.length + " minR=" + (isFinite(minR2) ? minR2.toFixed(4) : "n/a") + " maxR=" + (isFinite(maxR2) ? maxR2.toFixed(4) : "n/a") + " count=" + count());
+
+  dust(null);
+  step(5000);
+  console.log("after dust(null)+5000ms: count=" + count());
+
+  try {
+    renderer.render(scene, camera);
+  } catch (e) {
+    console.log("render error:", e.message);
+    throw e;
   }
 
-  return { counts };
+  return { ok: true };
 }

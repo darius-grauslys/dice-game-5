@@ -14,7 +14,27 @@ let dustAccum = 0;
 let sparklerAccum = 0;
 let t = 0;
 
+// Ring state
+let ringParticles = []; // 48 ring particles or []
+let ringAnchor = null; // [ax, ay, az] when ring exists
+let ringTheta = 0;
+
+function anchorsEqual(a, b) {
+  if (!a || !b) return a === b;
+  return Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(a[2] - b[2]) < 1e-6;
+}
+
 export function init(scene) {
+  particles = [];
+  ringParticles = [];
+  dustAnchor = null;
+  sparklerAnchor = null;
+  dustAccum = 0;
+  sparklerAccum = 0;
+  t = 0;
+  ringTheta = 0;
+  ringAnchor = null;
+
   positions = new Float32Array(MAX * 3);
   sizes = new Float32Array(MAX);
   colors = new Float32Array(MAX * 4);
@@ -59,15 +79,15 @@ export function init(scene) {
 }
 
 function makeDust(anchor) {
+  // random point on ring radius 0.9
   const angle = Math.random() * Math.PI * 2;
-  const x = anchor[0] + Math.cos(angle) * 0.6;
-  const z = anchor[2] + Math.sin(angle) * 0.6;
+  const x = anchor[0] + Math.cos(angle) * 0.9;
+  const z = anchor[2] + Math.sin(angle) * 0.9;
   const y = anchor[1];
   const vy = -(0.5 + Math.random() * 0.4);
   const drift = 0.05;
   const vx = (Math.random() - 0.5) * drift;
   const vz = (Math.random() - 0.5) * drift;
-  const isGold = Math.random() < 0.7;
   const size = 10 + Math.random() * 10;
   return {
     type: "dust",
@@ -78,9 +98,31 @@ function makeDust(anchor) {
     vy,
     vz,
     anchorY: anchor[1],
-    cr: isGold ? 1 : 1,
-    cg: isGold ? 0.847 : 1,
-    cb: isGold ? 0.29 : 1,
+    cr: 1,
+    cg: 0.847,
+    cb: 0.29,
+    size,
+  };
+}
+
+function makeFallingFromRing(p, anchorY) {
+  const vy = -(0.5 + Math.random() * 0.4);
+  const drift = 0.05;
+  const vx = (Math.random() - 0.5) * drift;
+  const vz = (Math.random() - 0.5) * drift;
+  const size = 10 + Math.random() * 10;
+  return {
+    type: "dust",
+    x: p.x,
+    y: p.y,
+    z: p.z,
+    vx,
+    vy,
+    vz,
+    anchorY,
+    cr: 1,
+    cg: 0.847,
+    cb: 0.29,
     size,
   };
 }
@@ -113,7 +155,63 @@ function makeSparkler(anchor) {
 }
 
 export function dust(anchor) {
+  if (anchor === null) {
+    if (ringParticles.length === 48) {
+      const anchorY = ringAnchor ? ringAnchor[1] : 1.0;
+      for (const p of ringParticles) {
+        particles.push(makeFallingFromRing(p, anchorY));
+      }
+      ringParticles = [];
+      ringAnchor = null;
+    }
+    dustAnchor = null;
+    return;
+  }
+
+  // anchor is an array
+  if (ringAnchor && anchorsEqual(ringAnchor, anchor)) {
+    // same anchor, ring already formed, do nothing
+    return;
+  }
+
+  // new anchor: release old ring as falling particles with new anchor's height
+  if (ringParticles.length === 48) {
+    for (const p of ringParticles) {
+      particles.push(makeFallingFromRing(p, anchor[1]));
+    }
+    ringParticles = [];
+    ringAnchor = null;
+  }
+
+  // form new ring
+  ringAnchor = [anchor[0], anchor[1], anchor[2]];
   dustAnchor = anchor;
+  ringTheta = 0;
+  ringParticles = [];
+  for (let i = 0; i < 48; i++) {
+    const angleForm = ringTheta + 2 * Math.PI * i / 48;
+    const x0 = ringAnchor[0] + 2.0 * Math.cos(angleForm);
+    const z0 = ringAnchor[2] + 2.0 * Math.sin(angleForm);
+    const y0 = ringAnchor[1] + 1.0;
+    const size = 10 + Math.random() * 8;
+    ringParticles.push({
+      slot: i,
+      tForm: t,
+      ax: ringAnchor[0],
+      ay: ringAnchor[1],
+      az: ringAnchor[2],
+      x0,
+      y0,
+      z0,
+      angleForm,
+      size,
+    });
+  }
+}
+
+export function ring() {
+  if (ringParticles.length !== 48) return [];
+  return ringParticles.map((p) => [p.x, p.y, p.z]);
 }
 
 export function sparkler(anchor) {
@@ -123,6 +221,21 @@ export function sparkler(anchor) {
 export function step(ms) {
   const dtSeconds = ms / 1000;
   t += ms;
+
+  if (ringParticles.length === 48) {
+    ringTheta += 0.8 * dtSeconds;
+    for (const p of ringParticles) {
+      const u = Math.min(1, (t - p.tForm) / 600);
+      const ease = 1 - (1 - u) * (1 - u);
+      const angleNow = ringTheta + 2 * Math.PI * p.slot / 48;
+      const targetX = p.ax + 0.9 * Math.cos(angleNow);
+      const targetZ = p.az + 0.9 * Math.sin(angleNow);
+      const targetY = p.ay;
+      p.x = p.x0 + ease * (targetX - p.x0);
+      p.z = p.z0 + ease * (targetZ - p.z0);
+      p.y = p.y0 + ease * (targetY - p.y0);
+    }
+  }
 
   if (dustAnchor) {
     dustAccum += 40 * dtSeconds;
@@ -161,25 +274,43 @@ export function step(ms) {
   }
   particles = updated;
 
-  const n = particles.length;
-  for (let i = 0; i < n; i++) {
-    const p = particles[i];
-    positions[i * 3] = p.x;
-    positions[i * 3 + 1] = p.y;
-    positions[i * 3 + 2] = p.z;
+  const ringCount = ringParticles.length;
+  const partCount = particles.length;
+  const total = ringCount + partCount;
+
+  let idx = 0;
+  for (let i = 0; i < ringCount; i++) {
+    const p = ringParticles[i];
+    positions[idx * 3] = p.x;
+    positions[idx * 3 + 1] = p.y;
+    positions[idx * 3 + 2] = p.z;
     const flicker = 0.7 + Math.random() * 0.6;
-    sizes[i] = p.size * flicker;
-    colors[i * 4] = p.cr;
-    colors[i * 4 + 1] = p.cg;
-    colors[i * 4 + 2] = p.cb;
-    colors[i * 4 + 3] = p.opacity != null ? p.opacity : 1;
+    sizes[idx] = p.size * flicker;
+    colors[idx * 4] = 1;
+    colors[idx * 4 + 1] = 0.847;
+    colors[idx * 4 + 2] = 0.29;
+    colors[idx * 4 + 3] = 1;
+    idx++;
   }
-  for (let i = n * 3; i < positions.length; i++) positions[i] = 0;
-  for (let i = n; i < sizes.length; i++) sizes[i] = 0;
-  for (let i = n * 4; i < colors.length; i++) colors[i] = 0;
+  for (let i = 0; i < partCount; i++) {
+    const p = particles[i];
+    positions[idx * 3] = p.x;
+    positions[idx * 3 + 1] = p.y;
+    positions[idx * 3 + 2] = p.z;
+    const flicker = 0.7 + Math.random() * 0.6;
+    sizes[idx] = p.size * flicker;
+    colors[idx * 4] = p.cr;
+    colors[idx * 4 + 1] = p.cg;
+    colors[idx * 4 + 2] = p.cb;
+    colors[idx * 4 + 3] = p.opacity != null ? p.opacity : 1;
+    idx++;
+  }
+  for (let i = idx * 3; i < positions.length; i++) positions[i] = 0;
+  for (let i = idx; i < sizes.length; i++) sizes[i] = 0;
+  for (let i = idx * 4; i < colors.length; i++) colors[i] = 0;
   geometry.needsUpdate = true;
 }
 
 export function count() {
-  return particles.length;
+  return ringParticles.length + particles.length;
 }
