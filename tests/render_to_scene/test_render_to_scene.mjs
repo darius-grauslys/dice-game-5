@@ -201,6 +201,86 @@ export async function _sheo_check() {
   // nextFrame resolves with a number
   const t = await nextFrame();
   assert.strictEqual(typeof t, "number");
+
+  // ---- finale: winner seat 2, losers' labels fly off with their dice ----
+  // record labels and dice positions before the winning play
+  const dBefore = describe();
+  const labelsBefore = {};
+  for (const lbl of dBefore.labels) labelsBefore[lbl.owner] = { x: lbl.x, y: lbl.y };
+  const diceBefore = {};
+  for (const dc of dBefore.dice) diceBefore[dc.id] = { x: dc.x, y: dc.y };
+
+  // winning play: winner seat 2, no tracks, finale starts at once
+  play([], poses, { turn: 0, glow: [], winner: 2, labels: makeLabels() });
+
+  // wait for frames until describe().finale.t >= 300
+  let dFinale;
+  for (let i = 0; i < 200; i++) {
+    await nextFrame();
+    dFinale = describe();
+    if (dFinale.finale && dFinale.finale.t >= 300) break;
+  }
+  assert.ok(dFinale.finale && dFinale.finale.t >= 300, "finale.t >= 300");
+
+  const labelsAt300 = {};
+  for (const lbl of dFinale.labels) labelsAt300[lbl.owner] = { x: lbl.x, y: lbl.y, visible: lbl.visible };
+  const diceAt300 = {};
+  for (const dc of dFinale.dice) diceAt300[dc.id] = { x: dc.x, y: dc.y };
+
+  // at ~300ms: each loser's label moved > 3px and cosine with owner's first die > 0.7
+  for (const owner of [0, 1, 3]) {
+    const lbBefore = labelsBefore[owner];
+    const lbAt = labelsAt300[owner];
+    const dxLabel = lbAt.x - lbBefore.x;
+    const dyLabel = lbAt.y - lbBefore.y;
+    const distLabel = Math.hypot(dxLabel, dyLabel);
+    assert.ok(distLabel > 3, `loser label owner ${owner} moved > 3px: ${distLabel}`);
+
+    const dieId = 4 * owner;
+    const dbBefore = diceBefore[dieId];
+    const dbAt = diceAt300[dieId];
+    const dxDie = dbAt.x - dbBefore.x;
+    const dyDie = dbAt.y - dbBefore.y;
+    const distDie = Math.hypot(dxDie, dyDie);
+
+    const dot = dxLabel * dxDie + dyLabel * dyDie;
+    const cosine = dot / (distLabel * distDie);
+    assert.ok(cosine > 0.7, `loser label owner ${owner} cosine > 0.7: ${cosine}`);
+  }
+
+  // winner's label (owner 2) visible: true
+  assert.strictEqual(labelsAt300[2].visible, true, "winner label owner 2 visible");
+
+  // by t >= 3500: owners 0, 1, 3 visible:false; owner 2 visible:true
+  let dFinaleEnd;
+  for (let i = 0; i < 500; i++) {
+    await nextFrame();
+    dFinaleEnd = describe();
+    if (dFinaleEnd.finale && dFinaleEnd.finale.t >= 3500) break;
+  }
+  assert.ok(dFinaleEnd.finale && dFinaleEnd.finale.t >= 3500, "finale.t >= 3500");
+
+  for (const owner of [0, 1, 3]) {
+    const lbl = dFinaleEnd.labels.find((l) => l.owner === owner);
+    assert.ok(lbl, `owner ${owner} label present`);
+    assert.strictEqual(lbl.visible, false, `loser owner ${owner} visible false at t>=3500`);
+  }
+  const winLbl = dFinaleEnd.labels.find((l) => l.owner === 2);
+  assert.ok(winLbl, "owner 2 label present");
+  assert.strictEqual(winLbl.visible, true, "winner owner 2 visible true at t>=3500");
+
+  // reset: winner null, wait 5 frames
+  play([], poses, { turn: 0, glow: [], winner: null, labels: makeLabels() });
+  for (let i = 0; i < 5; i++) await nextFrame();
+  const dReset = describe();
+  assert.strictEqual(dReset.finale, null, "finale reset to null");
+
+  for (const lbl of dReset.labels) {
+    assert.strictEqual(lbl.visible, true, `label owner ${lbl.owner} visible after reset`);
+    const before = labelsBefore[lbl.owner];
+    const dist = Math.hypot(lbl.x - before.x, lbl.y - before.y);
+    assert.ok(dist <= 1, `label owner ${lbl.owner} within 1px after reset: ${dist}`);
+  }
 }
 
 export const _sheo_browser = true;
