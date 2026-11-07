@@ -32,7 +32,7 @@ app/self/browser.mjs      the page's entry, bundled into /client.js (fixed)
   move field is `move`, because `kind` is always the value's tag), `rng`,
   `tables` (`FACES`, `ORIENTATIONS`, `TURN`), `json`, `wire` (what the
   network carries) and `view` (the client's geometry).
-- Dependencies are installed for you (`.wabbajack/setup`, `npm ci`) where
+- Dependencies are installed for you (the project's setup, `npm ci`) where
   `check` and `sim` run. Your own view of the repository doesn't have
   `node_modules`: that's expected. Don't install anything.
 

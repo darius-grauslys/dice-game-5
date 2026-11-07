@@ -49,7 +49,7 @@ async function deps() {
     return { esbuild: esbuild.default ?? esbuild, chromium };
   } catch (e) {
     throw new Error(`browser: the dependencies aren't installed (${String(e.message).split("\n")[0]}). ` +
-      "They come from .wabbajack/setup (npm ci) in dev; there is nothing to install by hand.");
+      "They come from the project's setup (npm ci) in dev; there is nothing to install by hand.");
   }
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // check: the project's agent-keyed check over its tree's edges.
 //
-// sheo-stack only calls this (the forwarded `check` and .githooks/project-checks);
+// sheo-stack only calls this (the forwarded `check`, and sheo-check through tools/sheo-bridge.mjs);
 // everything it knows is the project's own layout:
 //
 //   <path>/<id>/self/index.mjs      a node; its id is the folder above self/
