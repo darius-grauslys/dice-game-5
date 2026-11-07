@@ -23,6 +23,14 @@ function angleBetween(a, b) {
   return 2 * Math.acos(Math.abs(dot)) * 180 / Math.PI;
 }
 
+function deepFreeze(v) {
+  if (v && typeof v === "object") {
+    for (const key of Object.getOwnPropertyNames(v)) deepFreeze(v[key]);
+    Object.freeze(v);
+  }
+  return v;
+}
+
 function meshMaterials(mesh) {
   if (!mesh) return [];
   if (mesh.materials) return mesh.materials;
@@ -75,8 +83,8 @@ export async function _sheo_sim(canvas, scenario) {
   const initMaterials = meshMaterials(die3MeshInit);
   const initMaterialIds = initMaterials.map((m) => m && m.uuid ? m.uuid : (m ? String(m) : null));
 
-  const poses = buildPoses(seat);
-  const labels = buildLabels(seat);
+  const poses = deepFreeze(buildPoses(seat));
+  const labels = deepFreeze(buildLabels(seat));
 
   scene.play([], poses, { turn: 0, glow: [3], winner: null, labels });
 
@@ -124,7 +132,7 @@ export async function _sheo_sim(canvas, scenario) {
   const q3HeldA = quatArray(q3Held);
   const heldAngle = angleBetween(q3StartA, q3HeldA);
   scene.hold(null);
-  const track = { id: 3, from: { position: poses[3].position, matrix: IDENTITY }, to: { position: heldPose3.position, matrix: QY1 }, delay: 0, ms: MS.move, spin: 0 };
+  const track = deepFreeze({ id: 3, from: { position: poses[3].position, matrix: IDENTITY }, to: { position: heldPose3.position, matrix: QY1 }, delay: 0, ms: MS.move, spin: 0 });
   scene.play([track], poses, { turn: 0, glow: [3], winner: null, labels });
   for (let i = 0; i < 5; i++) {
     await scene.nextFrame();
@@ -132,6 +140,12 @@ export async function _sheo_sim(canvas, scenario) {
   const q3AfterPlay = scene._dieQuaternion(3);
   const q3AfterPlayA = quatArray(q3AfterPlay);
   const playAngle = angleBetween(q3AfterPlayA, toQ1);
+
+  // wait for the track to end (MS.move) + 200ms, then check animating
+  for (let i = 0; i < 40; i++) {
+    await scene.nextFrame();
+  }
+  const animatingAfterTrack = scene.describe().animating;
 
   // Finale reset scenario: start a finale with winner 0, wait WIN.label + WIN.labelMs + 500 ms,
   // then play with winner null to end the finale, wait 10 frames.
@@ -193,7 +207,7 @@ export async function _sheo_sim(canvas, scenario) {
   const result = {
     holdTurn: { half, end, otherEnd, backHalf, backEnd },
     holdCheck: { materialsSame, initMaterialIds, afterMaterialIds },
-    urgentFix: { heldAngle, playAngle, holdTrack: playAngle <= 1e-6 },
+    urgentFix: { heldAngle, playAngle, holdTrack: playAngle <= 1e-6, animatingAfterTrack },
     finaleReset,
   };
 
