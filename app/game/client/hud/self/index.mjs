@@ -1,11 +1,12 @@
 import { PLAYERS, WIN, TURN } from "../../../../../common/index.mjs";
 
-let rollButton, bannerEl, windowEl, seat, canvasRect;
+let rollButton, bannerEl, windowEl, turnBannerEl, seat, canvasRect;
 let rollQueue = [];
 let bannerTimer = null;
 let bannerQueue = [];
 let windowShown = false;
 let windowTimer = null;
+let turnBannerTimeouts = [];
 
 // near: whether the seat is close to winning.
 // True exactly when the seat's queue is either:
@@ -112,9 +113,25 @@ export function init({ canvas, seat: s }) {
   bannerEl.style.backgroundColor = "rgba(0,0,0,0.6)";
   bannerEl.style.fontSize = "28px";
   bannerEl.style.fontWeight = "bold";
+  bannerEl.style.textAlign = "center";
   bannerEl.style.width = canvasRect.width + "px";
   bannerEl.style.left = canvasRect.left + "px";
   bannerEl.style.top = canvasRect.top + "px";
+
+  turnBannerEl = document.createElement("div");
+  turnBannerEl.className = "hud-turn-banner";
+  turnBannerEl.style.position = "absolute";
+  turnBannerEl.style.display = "none";
+  turnBannerEl.style.borderRadius = "8px";
+  turnBannerEl.style.backgroundColor = "rgba(0,0,0,0.6)";
+  turnBannerEl.style.fontSize = "28px";
+  turnBannerEl.style.fontWeight = "bold";
+  turnBannerEl.style.textAlign = "center";
+  turnBannerEl.style.width = canvasRect.width + "px";
+  turnBannerEl.style.left = canvasRect.left + "px";
+  turnBannerEl.style.top = canvasRect.top + "px";
+  turnBannerEl.textContent = "It's your turn!";
+  turnBannerEl.style.color = PLAYERS[s].colour;
 
   windowEl = document.createElement("div");
   windowEl.className = "hud-window";
@@ -129,6 +146,7 @@ export function init({ canvas, seat: s }) {
 
   document.body.appendChild(rollButton);
   document.body.appendChild(bannerEl);
+  document.body.appendChild(turnBannerEl);
   document.body.appendChild(windowEl);
 }
 
@@ -159,6 +177,14 @@ export function show(prev, next) {
   }
   for (const b of banners) bannerQueue.push(b);
   processBanners();
+
+  const justTurned = next.winner === null && next.turn === seat && (prev === null || prev.turn !== seat);
+  const passesTurn = next.turn !== seat || next.winner !== null;
+  if (justTurned) {
+    showTurnBanner();
+  } else if (passesTurn) {
+    hideTurnBannerAtOnce();
+  }
 
   if (next.winner !== null) {
     if (!windowShown && windowTimer === null) {
@@ -212,4 +238,36 @@ function processBanners() {
     }, 3000);
   }, 400);
   bannerTimer = slideDownDone;
+}
+
+function showTurnBanner() {
+  turnBannerEl.textContent = "It's your turn!";
+  turnBannerEl.style.color = PLAYERS[seat].colour;
+  turnBannerEl.style.display = "";
+  const h = turnBannerEl.offsetHeight;
+  turnBannerEl.style.transition = "top 400ms";
+  turnBannerEl.style.top = (canvasRect.top - h - 20) + "px";
+  turnBannerEl.offsetHeight;
+  const targetTop = canvasRect.top + canvasRect.height * 0.22;
+  turnBannerEl.style.top = targetTop + "px";
+
+  let t1, t2, t3;
+  t1 = setTimeout(() => {
+    t2 = setTimeout(() => {
+      turnBannerEl.style.transition = "top 400ms";
+      turnBannerEl.style.top = (canvasRect.top - h - 20) + "px";
+      t3 = setTimeout(() => {
+        turnBannerEl.style.display = "none";
+        turnBannerTimeouts = [];
+      }, 400);
+    }, 2500);
+  }, 400);
+  turnBannerTimeouts = [t1, t2, t3];
+}
+
+function hideTurnBannerAtOnce() {
+  for (const t of turnBannerTimeouts) { if (t) clearTimeout(t); }
+  turnBannerTimeouts = [];
+  turnBannerEl.style.display = "none";
+  turnBannerEl.style.transition = "none";
 }
