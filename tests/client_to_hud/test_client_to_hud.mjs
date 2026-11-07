@@ -1,5 +1,5 @@
 import * as real from "../../edges/client/client_to_hud.mjs";
-import { Die, Group, Queue, Player, Game, WIN } from "../../common/index.mjs";
+import { Die, Group, Queue, Player, Game, WIN, PLAYERS } from "../../common/index.mjs";
 import assert from "node:assert/strict";
 
 // --- golden helpers ---
@@ -109,6 +109,34 @@ function isWindowVisible(text) {
   return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
 }
 
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function findTurnBanner() {
+  const all = document.querySelectorAll("*");
+  for (const el of all) {
+    if (el === document.body) continue;
+    const t = (el.textContent || "").trim();
+    if (t === "It's your turn!" && el.children.length === 0) return el;
+  }
+  return null;
+}
+
+function isTurnBannerShown() {
+  const el = findTurnBanner();
+  if (!el) return false;
+  const style = getComputedStyle(el);
+  if (style.display === "none" || style.visibility === "hidden") return false;
+  const rect = el.getBoundingClientRect();
+  const canvasRect = document.querySelector("canvas").getBoundingClientRect();
+  const overlaps = !(rect.right < canvasRect.left || rect.left > canvasRect.right || rect.bottom < canvasRect.top || rect.top > canvasRect.bottom);
+  return overlaps;
+}
+
 // --- _sheo_check ---
 
 export async function _sheo_check() {
@@ -192,7 +220,65 @@ export async function _sheo_check() {
   frame({ canRoll: false, anchor: { x: 400, y: 300 } });
   assert.strictEqual(getComputedStyle(rollBtn).display, "none", "button should be hidden when canRoll is false");
 
-  // 5. Banner non-near test: seat 1 goes from four single dice to [[4,0],[5,9],[6,0]],[[7,7]] (group of 3, not alike) -> no banner
+  // 5. Turn banner tests
+  // right after init: it exists, with the text `It's your turn!`, in PLAYERS[0].colour, and is hidden;
+  let tEl = findTurnBanner();
+  assert.ok(tEl, "turn banner exists after init");
+  assert.strictEqual(tEl.textContent, "It's your turn!");
+  assert.strictEqual(getComputedStyle(tEl).color, hexToRgb(PLAYERS[0].colour), "turn banner colour is PLAYERS[0].colour");
+  assert.ok(!isTurnBannerShown(), "turn banner hidden right after init");
+
+  // show(null, g) with g.turn === 1: still hidden 500 ms later;
+  const gTurn1 = Game({ players: [mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]), ...others], turn: 1, version: 1, rng: 7, last: null, winner: null });
+  show(null, gTurn1);
+  await new Promise((r) => setTimeout(r, 500));
+  assert.ok(!isTurnBannerShown(), "turn banner hidden when g.turn === 1");
+
+  // show(g, g2) with g2.turn === 0 (a higher version): shown 450 ms later, position, hidden 3500 ms after the show;
+  const gT = Game({ players: [mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]), ...others], turn: 1, version: 1, rng: 7, last: null, winner: null });
+  const gT2 = gT.with({ turn: 0, version: 2 });
+  show(gT, gT2);
+  await new Promise((r) => setTimeout(r, 450));
+  assert.ok(isTurnBannerShown(), "turn banner shown 450 ms after show(g, g2) with g2.turn === 0");
+  tEl = findTurnBanner();
+  const tRect = tEl.getBoundingClientRect();
+  const cRect = document.querySelector("canvas").getBoundingClientRect();
+  const expectedTop = 0.22 * cRect.height;
+  assert.ok(Math.abs(tRect.top - cRect.top - expectedTop) <= 4, `turn banner top at 0.22*height: ${tRect.top - cRect.top} vs ${expectedTop}`);
+  const tCenter = (tRect.left + tRect.right) / 2;
+  const cCenter = cRect.left + cRect.width / 2;
+  assert.ok(Math.abs(tCenter - cCenter) <= 4, `turn banner centred: ${tCenter} vs ${cCenter}`);
+  await new Promise((r) => setTimeout(r, 3050));
+  assert.ok(!isTurnBannerShown(), "turn banner hidden 3500 ms after show");
+
+  // show(g2, g3) with g3.turn === 0 again (a higher version): it does not show (check at 450 ms);
+  const gT3 = gT2.with({ version: 3 });
+  show(gT2, gT3);
+  await new Promise((r) => setTimeout(r, 450));
+  assert.ok(!isTurnBannerShown(), "turn banner does not show when turn stays 0 across versions");
+
+  // it becomes your turn again (show(<turn 3>, <turn 0>)), and 600 ms later show(<turn 0>, <turn 1>): hidden at once (check after 2 frames);
+  const gT3_prev = Game({ players: [mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]), ...others], turn: 3, version: 4, rng: 7, last: null, winner: null });
+  const gT3_next = gT3_prev.with({ turn: 0, version: 5 });
+  show(gT3_prev, gT3_next);
+  await new Promise((r) => setTimeout(r, 600));
+  assert.ok(isTurnBannerShown(), "turn banner shows when it becomes your turn (prev.turn 3 -> 0)");
+  const gT4_next = gT3_next.with({ turn: 1, version: 6 });
+  show(gT3_next, gT4_next);
+  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.ok(!isTurnBannerShown(), "turn banner hidden at once when show(<turn 0>, <turn 1>)");
+
+  // show(null, h) with h.turn === 0 and winner: null (a new game): shown 450 ms later; and a show whose next.winner !== null while it shows hides it at once;
+  const h = Game({ players: [mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]), ...others], turn: 0, version: 7, rng: 7, last: null, winner: null });
+  show(null, h);
+  await new Promise((r) => setTimeout(r, 450));
+  assert.ok(isTurnBannerShown(), "turn banner shown 450 ms after show(null, h) with h.turn === 0, winner: null");
+  const hWon = h.with({ winner: 0, version: 8 });
+  show(h, hWon);
+  assert.ok(!isTurnBannerShown(), "turn banner hidden at once when next.winner !== null");
+
+  // 7. Banner non-near test: seat 1 goes from four single dice to [[4,0],[5,9],[6,0]],[[7,7]] (group of 3, not alike) -> no banner
   const bannerPrevPlayers = [
     mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]),
     mk(1, [[[4, 0]], [[5, 0]], [[6, 0]], [[7, 0]]]),
@@ -215,7 +301,7 @@ export async function _sheo_check() {
 
   assert.ok(!isBannerVisible(), "no banner for non-near transition (group of 3, not alike)");
 
-  // 6. Banner near test: seat 1 goes from four single dice to [[4,0],[5,0],[6,0]],[[7,7]] (near) -> banner "Player 2 is close to winning!"
+  // 8. Banner near test: seat 1 goes from four single dice to [[4,0],[5,0],[6,0]],[[7,7]] (near) -> banner "Player 2 is close to winning!"
   const bannerNextNearPlayers = [
     mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]),
     mk(1, [[[4, 0], [5, 0], [6, 0]], [[7, 7]]]),
@@ -232,7 +318,7 @@ export async function _sheo_check() {
   assert.ok(bannerEl, "banner exists");
   assert.ok(bannerEl.textContent.includes("Player 2 is close to winning!"), "banner text correct");
 
-  // 7. Window test
+  // 9. Window test
   const winNext = rankGame.with({ winner: 2 });
   show(null, winNext);
 
@@ -252,18 +338,18 @@ export async function _sheo_check() {
   }
   assert.deepStrictEqual(pLabels, ["P1", "P2", "P3", "P4"]);
 
-  // 8. Scoreboard closes on a new game
+  // 10. Scoreboard closes on a new game
   // Hide the window first (from section 7 the window shows "Player 3 wins!")
   const hideFresh = rankGame.with({ winner: null, version: 9999 });
   show(null, hideFresh);
 
-  // 8a. show(null, won) → after WIN.window ms the window shows (as now)
+  // 10a. show(null, won) → after WIN.window ms the window shows (as now)
   const wonGame = rankGame.with({ winner: 2 });
   show(null, wonGame);
   await new Promise((r) => setTimeout(r, WIN.window + 500));
   assert.ok(isWindowVisible("Player 3 wins!"), "scoreboard: window shows after WIN.window ms");
 
-  // 8b. show(null, fresh) with same players, winner: null, higher version → window hidden at once
+  // 10b. show(null, fresh) with same players, winner: null, higher version → window hidden at once
   const freshGame = wonGame.with({ winner: null, version: wonGame.version + 100 });
   show(null, freshGame);
   // check in the same tick
@@ -274,13 +360,13 @@ export async function _sheo_check() {
   await new Promise((r) => setTimeout(r, 0));
   assert.ok(!isWindowVisible("Player 3 wins!"), "scoreboard: window hidden after 2 frames");
 
-  // 8c. show(fresh, won2) with a winner again → after WIN.window ms window shows again, new winner's text
+  // 10c. show(fresh, won2) with a winner again → after WIN.window ms window shows again, new winner's text
   const won2Game = freshGame.with({ winner: 1 });
   show(freshGame, won2Game);
   await new Promise((r) => setTimeout(r, WIN.window + 500));
   assert.ok(isWindowVisible("Player 2 wins!"), "scoreboard: window shows again after WIN.window ms with new winner");
 
-  // 8d. a show(prev, won) followed within WIN.window ms by show(null, fresh) → window never shows
+  // 10d. a show(prev, won) followed within WIN.window ms by show(null, fresh) → window never shows
   // Hide the window first (from section 8c it shows "Player 2 wins!")
   show(null, freshGame.with({ winner: null, version: freshGame.version + 100 }));
   const wonGame3 = at([[[0, 0], [1, 0], [2, 0]], [[3, 7]]]).with({ winner: 0 });
@@ -290,4 +376,29 @@ export async function _sheo_check() {
   show(null, freshGame3);
   await new Promise((r) => setTimeout(r, WIN.window + 500));
   assert.ok(!isWindowVisible("Player 1 wins!"), "scoreboard: window never shows when show(null, fresh) called within WIN.window ms");
+
+  // 11. near banner and turn banner together
+  // once no near banner is showing or queued (wait 4000 ms after the last one)
+  await new Promise((r) => setTimeout(r, 4000));
+  const nearTurnPrevPlayers = [
+    mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]),
+    mk(1, [[[4, 0]], [[5, 0]], [[6, 0]], [[7, 0]]]),
+    mk(2, [[[8, 0]], [[9, 0]], [[10, 0]], [[11, 0]]]),
+    mk(3, [[[12, 0]], [[13, 0]], [[14, 0]], [[15, 0]]]),
+  ];
+  const nearTurnPrev = Game({ players: nearTurnPrevPlayers, turn: 3, version: 1, rng: 7, last: null, winner: null });
+
+  const nearTurnNextPlayers = [
+    mk(0, [[[0, 0]], [[1, 0]], [[2, 0]], [[3, 0]]]),
+    mk(1, [[[4, 0], [5, 0], [6, 0]], [[7, 7]]]),
+    mk(2, [[[8, 0]], [[9, 0]], [[10, 0]], [[11, 0]]]),
+    mk(3, [[[12, 0]], [[13, 0]], [[14, 0]], [[15, 0]]]),
+  ];
+  const nearTurnNext = Game({ players: nearTurnNextPlayers, turn: 0, version: 2, rng: 7, last: null, winner: null });
+
+  show(nearTurnPrev, nearTurnNext);
+  await new Promise((r) => setTimeout(r, 450));
+  assert.ok(isTurnBannerShown(), "turn banner shown with near banner together");
+  const nbEl = findElementByText("Player 2 is close to winning!");
+  assert.ok(nbEl, "near banner shown with turn banner together");
 }
