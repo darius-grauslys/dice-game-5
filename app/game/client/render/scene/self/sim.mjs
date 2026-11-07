@@ -147,16 +147,35 @@ export async function _sheo_sim(canvas, scenario) {
   }
   const animatingAfterTrack = scene.describe().animating;
 
-  // Finale reset scenario: start a finale with winner 0, wait WIN.label + WIN.labelMs + 500 ms,
-  // then play with winner null to end the finale, wait 10 frames.
-  scene.play([], poses, { turn: 0, glow: [3], winner: 0, labels });
-  for (let i = 0; i < 300; i++) {
+  // Finale scenario: start a finale with winner 0, print labels at t ≈ 0, 300, 1000, 3500 ms
+  scene.play([], poses, Object.freeze({ turn: 0, glow: [3], winner: 0, labels }));
+
+  const labelFinaleStatuses = [];
+  for (const targetT of [0, 300, 1000, 3500]) {
+    while (true) {
+      const d = scene.describe();
+      if (d.finale && d.finale.t >= targetT - 16) break;
+      await scene.nextFrame();
+    }
+    const d2 = scene.describe();
+    labelFinaleStatuses.push({ t: d2.finale ? d2.finale.t : null, labels: d2.labels });
     await scene.nextFrame();
   }
-  scene.play([], poses, { turn: 0, glow: [3], winner: null, labels });
+
+  // then play without a winner and print them again (all visible, back in place)
+  scene.play([], poses, Object.freeze({ turn: 0, glow: [3], winner: null, labels }));
   for (let i = 0; i < 10; i++) {
     await scene.nextFrame();
   }
+  const labelResetStatuses = scene.describe().labels;
+
+  // print label statuses
+  console.log("LABEL FINALE:");
+  for (const entry of labelFinaleStatuses) {
+    console.log(`  t=${entry.t}: ${entry.labels.map((l) => `o${l.owner}:v${l.visible}`).join(", ")}`);
+  }
+  console.log("LABEL RESET:");
+  console.log(`  ${labelResetStatuses.map((l) => `o${l.owner}:v${l.visible}`).join(", ")}`);
 
   // print finale reset results
   const diceStatus = [];
@@ -209,6 +228,8 @@ export async function _sheo_sim(canvas, scenario) {
     holdCheck: { materialsSame, initMaterialIds, afterMaterialIds },
     urgentFix: { heldAngle, playAngle, holdTrack: playAngle <= 1e-6, animatingAfterTrack },
     finaleReset,
+    labelFinale: labelFinaleStatuses,
+    labelReset: labelResetStatuses,
   };
 
   return result;
