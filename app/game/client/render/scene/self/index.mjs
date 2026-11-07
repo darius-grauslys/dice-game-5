@@ -254,7 +254,7 @@ function quaternionToMatrix3(q) {
 // the sparkler stopped (`sparks.sparkler(null)`) and its particles gone, and the next win starts a new finale from the beginning.
 function play(tracksInput, posesInput, state) {
   playStart = performance.now();
-  tracks = tracksInput || [];
+  tracks = (tracksInput || []).slice(); // motion's tracks are frozen: copy, never assign into them
   posesById = {};
   for (const p of posesInput) posesById[p.id] = p;
 
@@ -287,7 +287,9 @@ function play(tracksInput, posesInput, state) {
       // starts at mesh position/rotation if held or turning back, else track.from
       if (meshFrom[i]) {
         setDiePose(diceMeshes[i], meshFrom[i].position, meshFrom[i].matrix);
-        tr.from = meshFrom[i];
+        const own = { ...tr, from: meshFrom[i] };
+        tracks[tracks.indexOf(tr)] = own;
+        trackById[i] = own;
       } else {
         setDiePose(diceMeshes[i], tr.from.position, tr.from.matrix);
       }
