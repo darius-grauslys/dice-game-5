@@ -151,16 +151,14 @@ export function drain() {
 }
 
 export function show(prev, next) {
-  if (prev !== null) {
-    const banners = [];
-    for (let p = 0; p < 4; p++) {
-      if (near(next, p) && next.winner === null && !near(prev, p)) {
-        banners.push({ p, text: `Player ${p + 1} is close to winning!`, colour: PLAYERS[p].colour });
-      }
+  const banners = [];
+  for (let p = 0; p < 4; p++) {
+    if (near(next, p) && next.winner === null && (prev === null || !near(prev, p))) {
+      banners.push({ p, text: `Player ${p + 1} is close to winning!`, colour: PLAYERS[p].colour });
     }
-    for (const b of banners) bannerQueue.push(b);
-    processBanners();
   }
+  for (const b of banners) bannerQueue.push(b);
+  processBanners();
 
   if (next.winner !== null) {
     if (!windowShown && windowTimer === null) {
