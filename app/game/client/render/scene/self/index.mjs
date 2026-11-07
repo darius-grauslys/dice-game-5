@@ -40,6 +40,7 @@ let myPoints = null;
 let lastFrameTime = 0;
 let dustParticles = [];
 let sparklerParticles = [];
+let stateLabels = null;
 
 function makeGlow(mesh) {
   const group = mesh instanceof THREE.Group ? mesh : new THREE.Group();
@@ -257,6 +258,7 @@ function play(tracksInput, posesInput, state) {
   tracks = (tracksInput || []).slice(); // motion's tracks are frozen: copy, never assign into them
   posesById = {};
   for (const p of posesInput) posesById[p.id] = p;
+  stateLabels = state.labels;
 
   const trackById = {};
   for (const tr of tracks) trackById[tr.id] = tr;
@@ -348,10 +350,17 @@ function play(tracksInput, posesInput, state) {
     dustParticles = [];
   }
 
-  // finale: first play with winner !== null starts it
+  // tracks end time: max over tracks of (playStart + delay + ms), or playStart if no tracks
+  let tracksEndTime = playStart;
+  for (const tr of tracks) {
+    const end = playStart + (tr.delay || 0) + (tr.ms || 0);
+    if (end > tracksEndTime) tracksEndTime = end;
+  }
+
+  // finale: first play with winner !== null starts it, timed from when its tracks end (t = 0)
   if (hasWinner) {
     if (!finaleState || !finaleState.started) {
-      finaleState = { started: true, tracksEnd: playStart };
+      finaleState = { started: true, tracksEnd: tracksEndTime };
       // sparks.dust(null) handled above
     }
   } else {
@@ -511,6 +520,36 @@ function tickFinale(now) {
     }
   }
 
+  // losers' labels: fly off with their owner's first die
+  for (let o = 0; o < 4; o++) {
+    if (o === winner) continue;
+    const lp = stateLabels[o].position;
+    const flight = fly.flight({ position: [lp[0], lp[1], lp[2]], matrix: IDENTITY }, 4 * o, findSeed(), t);
+    labelMeshes[o].position.set(flight.position[0], flight.position[1], flight.position[2]);
+    // rotation: flight.matrix applied to its turn-to-camera rotation
+    const yaw = YAW[seat];
+    const eye = [
+      yaw[0][0] * CAMERA.eye[0] + yaw[0][1] * CAMERA.eye[1] + yaw[0][2] * CAMERA.eye[2],
+      yaw[1][0] * CAMERA.eye[0] + yaw[1][1] * CAMERA.eye[1] + yaw[1][2] * CAMERA.eye[2],
+      yaw[2][0] * CAMERA.eye[0] + yaw[2][1] * CAMERA.eye[1] + yaw[2][2] * CAMERA.eye[2],
+    ];
+    const dx = eye[0] - lp[0];
+    const dz = eye[2] - lp[2];
+    const angle = atan2(dx, dz);
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    const Ry = [[c, 0, s], [0, 1, 0], [-s, 0, c]];
+    const combined = mat3Mul(flight.matrix, Ry);
+    const m4 = mat3ToMatrix4(combined);
+    labelMeshes[o].quaternion.setFromRotationMatrix(m4);
+    // hidden once below y = -20
+    if (flight.position[1] <= -20) {
+      labelMeshes[o].visible = false;
+    } else {
+      labelMeshes[o].visible = true;
+    }
+  }
+
   // winner's label: from t = WIN.label for WIN.labelMs ms, moves from its place to [0, 2.5, 0] and grows to 1.6x
   const winnerLabel = labelMeshes[winner];
   const lp0 = (finaleState.labelStartPos || (finaleState.labelStartPos = labelMeshes[winner].position.clone()));
@@ -545,6 +584,16 @@ function tickFinale(now) {
 function easeInOut(t) {
   if (t < 0.5) return 2 * t * t;
   return 1 - 2 * (1 - t) * (1 - t);
+}
+
+const IDENTITY = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+
+function mat3Mul(a, b) {
+  return [
+    [a[0][0] * b[0][0] + a[0][1] * b[1][0] + a[0][2] * b[2][0], a[0][0] * b[0][1] + a[0][1] * b[1][1] + a[0][2] * b[2][1], a[0][0] * b[0][2] + a[0][1] * b[1][2] + a[0][2] * b[2][2]],
+    [a[1][0] * b[0][0] + a[1][1] * b[1][0] + a[1][2] * b[2][0], a[1][0] * b[0][1] + a[1][1] * b[1][1] + a[1][2] * b[2][1], a[1][0] * b[0][2] + a[1][1] * b[1][2] + a[1][2] * b[2][2]],
+    [a[2][0] * b[0][0] + a[2][1] * b[1][0] + a[2][2] * b[2][0], a[2][0] * b[0][1] + a[2][1] * b[1][1] + a[2][2] * b[2][1], a[2][0] * b[0][2] + a[2][1] * b[1][2] + a[2][2] * b[2][2]],
+  ];
 }
 
 function atan2(y, x) {
@@ -812,7 +861,7 @@ function describe() {
   for (let o = 0; o < 4; o++) {
     const m = labelMeshes[o];
     const pr = projectToCanvas(m.position);
-    labels.push({ owner: o, x: pr ? pr.x : 0, y: pr ? pr.y : 0 });
+    labels.push({ owner: o, x: pr ? pr.x : 0, y: pr ? pr.y : 0, visible: m.visible });
   }
   const glowIds = [];
   for (let i = 0; i < 16; i++) {
