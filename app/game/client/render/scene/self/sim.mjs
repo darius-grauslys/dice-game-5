@@ -1,12 +1,12 @@
 import * as scene from "./index.mjs";
-import { YAW, DIE, LABEL, WIN, MS } from "../../../../../../common/index.mjs";
+import { YAW, DIE, LABEL, WIN, MS, GLOW } from "../../../../../../common/index.mjs";
 import * as THREE from "three";
 import { mat3ToMatrix4 } from "./math.mjs";
 import { ease, turnAt, sameRotation } from "./hold.mjs";
 
 const IDENTITY = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
 const QY1 = [[0, 0, 1], [0, 1, 0], [-1, 0, 0]];
-const QYm1 = [[0, 0, -1], [0, 1, 0], [1, 0, 0]];
+const QY2 = [[-1, 0, 0], [0, 1, 0], [0, 0, -1]];
 
 function quatArray(q) {
   return [q.x, q.y, q.z, q.w];
@@ -19,7 +19,7 @@ function mat3ToQuat(m) {
 }
 
 function angleBetween(a, b) {
-  const dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3];
+  const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
   return 2 * Math.acos(Math.abs(dot)) * 180 / Math.PI;
 }
 
@@ -29,14 +29,6 @@ function deepFreeze(v) {
     Object.freeze(v);
   }
   return v;
-}
-
-function meshMaterials(mesh) {
-  if (!mesh) return [];
-  if (mesh.materials) return mesh.materials;
-  if (mesh.material) return [mesh.material];
-  if (mesh instanceof THREE.Group) return mesh.children.flatMap(meshMaterials);
-  return [];
 }
 
 function buildPoses(seat) {
@@ -70,6 +62,29 @@ function buildLabels(seat) {
   return labels;
 }
 
+function countGoldPixels(canvas, box) {
+  try {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return 0;
+    const img = ctx.getImageData(box.x, box.y, box.w, box.h).data;
+    let count = 0;
+    const gold = GLOW.colour; // #ffd84a
+    const r = parseInt(gold.slice(1, 3), 16);
+    const g = parseInt(gold.slice(3, 5), 16);
+    const b = parseInt(gold.slice(5, 7), 16);
+    for (let i = 0; i < img.length; i += 4) {
+      const a = img[i + 3];
+      if (a > 20) {
+        const dr = img[i] - r, dg = img[i + 1] - g, db = img[i + 2] - b;
+        if (dr * dr + dg * dg + db * db <= 900) count++;
+      }
+    }
+    return count;
+  } catch (e) {
+    return 0;
+  }
+}
+
 export async function _sheo_sim(canvas, scenario) {
   const meta = document.createElement("meta");
   meta.name = "dice-seed";
@@ -79,158 +94,67 @@ export async function _sheo_sim(canvas, scenario) {
   const seat = (scenario && scenario.seat) ?? 0;
   scene.init({ canvas, seat });
 
-  const die3MeshInit = scene._dieMesh(3);
-  const initMaterials = meshMaterials(die3MeshInit);
-  const initMaterialIds = initMaterials.map((m) => m && m.uuid ? m.uuid : (m ? String(m) : null));
-
   const poses = deepFreeze(buildPoses(seat));
   const labels = deepFreeze(buildLabels(seat));
 
-  scene.play([], poses, { turn: 0, glow: [3], winner: null, labels });
-
+  // 1. after a deal play with turn: 0: describe().dust and labels[0].position (y lower by 0.4)
+  scene.play([], poses, Object.freeze({ turn: 0, glow: [0], winner: null, labels }));
   for (let i = 0; i < 60; i++) {
     await scene.nextFrame();
   }
+  const d0 = scene.describe();
+  const dustAnchor = d0.dust;
+  const label0Pos = scene._labelPosition(0);
+  console.log("1. dust:", dustAnchor, "labels[0].position y-0.4:", [label0Pos[0], label0Pos[1] - 0.4, label0Pos[2]]);
 
-  const q0 = scene._dieQuaternion(3);
-  const q0a = quatArray(q0);
-
-  // Phase 1: hold QY1 — turn from identity to QY1 over MS.turn
-  const toQ1 = mat3ToQuat(QY1);
-  const halfQ1 = turnAt(q0a, toQ1, MS.turn / 2, MS.turn);
-  const endQ1 = turnAt(q0a, toQ1, MS.turn + 100, MS.turn);
-  const half = angleBetween(q0a, halfQ1);
-  const end = angleBetween(q0a, endQ1);
-
-  // Phase 2: hold QYm1 — turn from QY1 to QYm1
-  const toQm1 = mat3ToQuat(QYm1);
-  const otherQ = turnAt(toQ1, toQm1, MS.turn + 100, MS.turn);
-  const otherEnd = angleBetween(q0a, otherQ);
-
-  // Phase 3: hold(null) — turn back from QYm1 to identity
-  const backQ_half = turnAt(toQm1, q0a, MS.turn / 2, MS.turn);
-  const backQ_end = turnAt(toQm1, q0a, MS.turn + 100, MS.turn);
-  const backHalf = angleBetween(q0a, backQ_half);
-  const backEnd = angleBetween(q0a, backQ_end);
-
-  const die3MeshAfter = scene._dieMesh(3);
-  const afterMaterials = meshMaterials(die3MeshAfter);
-  const afterMaterialIds = afterMaterials.map((m) => m && m.uuid ? m.uuid : (m ? String(m) : null));
-  const materialsSame = initMaterialIds.length === afterMaterialIds.length && initMaterialIds.every((id, i) => id === afterMaterialIds[i]);
-
-  // Urgent fix check: hold die 3 turned a quarter about y (as the hold step does),
-  // wait MS.turn + 100 ms, then play with a track for die 3 from its old pose to the turned pose.
-  // die 3's quaternion right after that play should equal the turned pose's (within 1e-6).
-  const q3Start = scene._dieQuaternion(3);
-  const q3StartA = quatArray(q3Start);
-  const heldPose3 = { ...poses[3], matrix: QY1 };
-  scene.hold({ poses: [heldPose3], at: { x: 400, y: 300 }, to: { x: 400, y: 300 } });
-  for (let i = 0; i < 30; i++) {
-    await scene.nextFrame();
-  }
-  const q3Held = scene._dieQuaternion(3);
-  const q3HeldA = quatArray(q3Held);
-  const heldAngle = angleBetween(q3StartA, q3HeldA);
-  scene.hold(null);
-  const track = deepFreeze({ id: 3, from: { position: poses[3].position, matrix: IDENTITY }, to: { position: heldPose3.position, matrix: QY1 }, delay: 0, ms: MS.move, spin: 0 });
-  scene.play([track], poses, { turn: 0, glow: [3], winner: null, labels });
-  for (let i = 0; i < 5; i++) {
-    await scene.nextFrame();
-  }
-  const q3AfterPlay = scene._dieQuaternion(3);
-  const q3AfterPlayA = quatArray(q3AfterPlay);
-  const playAngle = angleBetween(q3AfterPlayA, toQ1);
-
-  // wait for the track to end (MS.move) + 200ms, then check animating
+  // 2. hold die 0 turned a quarter about y, once per frame for 400 ms: describe().armed, and angle between die 0's q before and now (~1.571 rad)
+  const qBefore = quatArray(scene._dieQuaternion(0));
+  const heldPose0 = { ...poses[0], matrix: QY2 };
+  const t0 = performance.now();
+  let armedAt400 = [];
+  let angleAt400 = 0;
   for (let i = 0; i < 40; i++) {
+    scene.hold({ poses: [heldPose0], at: { x: 400, y: 300 }, to: { x: 400, y: 300 } });
     await scene.nextFrame();
-  }
-  const animatingAfterTrack = scene.describe().animating;
-
-  // Finale scenario: start a finale with winner 0, print labels at t ≈ 0, 300, 1000, 3500 ms
-  scene.play([], poses, Object.freeze({ turn: 0, glow: [3], winner: 0, labels }));
-
-  const labelFinaleStatuses = [];
-  for (const targetT of [0, 300, 1000, 3500]) {
-    while (true) {
-      const d = scene.describe();
-      if (d.finale && d.finale.t >= targetT - 16) break;
-      await scene.nextFrame();
+    const elapsed = performance.now() - t0;
+    if (elapsed >= 400) {
+      armedAt400 = scene.describe().armed;
+      const qNow = quatArray(scene._dieQuaternion(0));
+      angleAt400 = angleBetween(qBefore, qNow) * Math.PI / 180;
     }
-    const d2 = scene.describe();
-    labelFinaleStatuses.push({ t: d2.finale ? d2.finale.t : null, labels: d2.labels });
+  }
+  console.log("2. describe().armed:", armedAt400, "angle (rad):", angleAt400.toFixed(4));
+
+  // 3. then hold(null) once per frame: angle back to start at ~125 ms (~0.785) and at 400 ms (~0), and describe().armed ([])
+  scene.hold(null);
+  const tb = performance.now();
+  let angleAt125 = null, angleAt400Back = null, armedAtEnd = [];
+  for (let i = 0; i < 80; i++) {
+    scene.hold(null);
     await scene.nextFrame();
+    const elapsed = performance.now() - tb;
+    if (elapsed >= 125 && elapsed < 525 && angleAt125 === null) {
+      const qNow = quatArray(scene._dieQuaternion(0));
+      angleAt125 = angleBetween(qBefore, qNow) * Math.PI / 180;
+    }
+    if (elapsed >= 400) {
+      const qNow = quatArray(scene._dieQuaternion(0));
+      angleAt400Back = angleBetween(qBefore, qNow) * Math.PI / 180;
+      armedAtEnd = scene.describe().armed;
+    }
   }
+  console.log("3. angle back at ~125ms:", angleAt125 ? angleAt125.toFixed(4) : null, "at ~400ms:", angleAt400Back ? angleAt400Back.toFixed(4) : null, "armed:", armedAtEnd);
 
-  // then play without a winner and print them again (all visible, back in place)
-  scene.play([], poses, Object.freeze({ turn: 0, glow: [3], winner: null, labels }));
-  for (let i = 0; i < 10; i++) {
-    await scene.nextFrame();
-  }
-  const labelResetStatuses = scene.describe().labels;
+  // 4. picture (or gold-pixel count in a box around die 0) held vs released
+  scene.hold({ poses: [{ ...poses[0], matrix: QY2 }], at: { x: 400, y: 300 }, to: { x: 400, y: 300 } });
+  for (let i = 0; i < 30; i++) await scene.nextFrame();
+  const boxHeld = { x: 350, y: 220, w: 100, h: 100 };
+  const goldHeld = countGoldPixels(canvas, boxHeld);
+  scene.hold(null);
+  for (let i = 0; i < 30; i++) await scene.nextFrame();
+  const goldReleased = countGoldPixels(canvas, boxHeld);
+  console.log("4. gold pixels around die 0: held=" + goldHeld + " released=" + goldReleased);
 
-  // print label statuses
-  console.log("LABEL FINALE:");
-  for (const entry of labelFinaleStatuses) {
-    console.log(`  t=${entry.t}: ${entry.labels.map((l) => `o${l.owner}:v${l.visible}`).join(", ")}`);
-  }
-  console.log("LABEL RESET:");
-  console.log(`  ${labelResetStatuses.map((l) => `o${l.owner}:v${l.visible}`).join(", ")}`);
-
-  // print finale reset results
-  const diceStatus = [];
-  for (let i = 0; i < 16; i++) {
-    const pos = scene._diePosition(i);
-    const pose = poses[i];
-    const dx = pos[0] - pose.position[0];
-    const dy = pos[1] - pose.position[1];
-    const dz = pos[2] - pose.position[2];
-    const dist = Math.hypot(dx, dy, dz);
-    diceStatus.push({
-      id: i,
-      visible: scene._dieVisible(i),
-      pos,
-      posePos: pose.position,
-      distWithin1e6: dist <= 1e-6,
-    });
-  }
-  const labelStatus = [];
-  for (let o = 0; o < 4; o++) {
-    const s = scene._labelScale(o);
-    const p = scene._labelPosition(o);
-    const lp = labels[o].position;
-    const dx = p[0] - lp[0];
-    const dy = p[1] - lp[1];
-    const dz = p[2] - lp[2];
-    const dist = Math.hypot(dx, dy, dz);
-    labelStatus.push({
-      owner: o,
-      scale: s,
-      scaleAll1: s[0] === 1 && s[1] === 1 && s[2] === 1,
-      pos: p,
-      labelPos: lp,
-      distWithin1e6: dist <= 1e-6,
-    });
-  }
-  const sparklerRuns = scene._sparklerAnchor() !== null;
-  const sparklerCount = scene._sparklerParticleCount();
-  const desc = scene.describe();
-
-  const finaleReset = {
-    dice: diceStatus,
-    labels: labelStatus,
-    sparkler: { runs: sparklerRuns, count: sparklerCount, anchor: scene._sparklerAnchor() },
-    finale: desc.finale,
-  };
-
-  const result = {
-    holdTurn: { half, end, otherEnd, backHalf, backEnd },
-    holdCheck: { materialsSame, initMaterialIds, afterMaterialIds },
-    urgentFix: { heldAngle, playAngle, holdTrack: playAngle <= 1e-6, animatingAfterTrack },
-    finaleReset,
-    labelFinale: labelFinaleStatuses,
-    labelReset: labelResetStatuses,
-  };
-
+  const result = { dust: dustAnchor, label0: label0Pos, armedAt400, angleAt400, angleAt125, angleAt400Back, armedAtEnd, goldHeld, goldReleased };
   return result;
 }
