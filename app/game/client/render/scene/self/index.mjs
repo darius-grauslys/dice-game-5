@@ -21,6 +21,8 @@ let renderer, scene, camera, tableMesh;
 let diceMeshes = [];
 let labelMeshes = [];
 let glowMeshes = [];
+let armedGlowMeshes = [];
+let currentGlow = [];
 let canvasEl, seat;
 let animating = false;
 let tracks = [];
@@ -54,6 +56,29 @@ function makeGlow(mesh) {
     color: GLOW.colour,
     side: THREE.BackSide,
     blending: THREE.AdditiveBlending,
+  });
+  for (const c of group.children) {
+    if (c.material) c.material = mat;
+  }
+  group.visible = false;
+  return group;
+}
+
+function makeArmedGlow(mesh) {
+  const group = mesh instanceof THREE.Group ? mesh : new THREE.Group();
+  if (mesh instanceof THREE.Group) {
+    for (const c of mesh.children) group.add(c.clone());
+  } else {
+    group.add(mesh.clone());
+  }
+  group.scale.set(1.25, 1.25, 1.25);
+  const mat = new THREE.MeshBasicMaterial({
+    color: GLOW.colour,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false,
   });
   for (const c of group.children) {
     if (c.material) c.material = mat;
@@ -157,6 +182,17 @@ function init({ canvas, seat: s }) {
     scene.add(g);
   }
 
+  // armed glow outlines (behind dice), steady, scale 1.25 (hidden before play)
+  armedGlowMeshes = [];
+  for (let i = 0; i < 16; i++) {
+    const g0 = makeArmedGlow(diceMeshes[i] instanceof THREE.Group ? diceMeshes[i].children[0] : diceMeshes[i]);
+    const g = new THREE.Group();
+    g.add(g0);
+    g.visible = false;
+    armedGlowMeshes.push(g);
+    scene.add(g);
+  }
+
   // sparks
   sparks.init(scene);
   let pts = scene.children.find(c => c.isPoints);
@@ -205,6 +241,7 @@ function init({ canvas, seat: s }) {
   glowT0 = 0;
   dustAnchor = null;
   sparklerAnchor = null;
+  currentGlow = [];
   lastFrameTime = performance.now();
 
   (function loop(t) {
@@ -214,17 +251,12 @@ function init({ canvas, seat: s }) {
     lastFrameTime = now;
     if (!firstPlayDone && diceMeshes.length > 0) {
     }
-    try {
-      tickTracks(dt);
-      tickHold(dt);
-      tickGlow(now);
-      tickFinale(now);
-      renderParticles(now);
-      const pts = scene.children.find(c => c.isPoints);
-      renderer.render(scene, camera);
-    } catch (e) {
-      console.log("RENDER ERROR:", (e && e.message) || String(e));
-    }
+    tickTracks(dt);
+    tickHold(dt);
+    tickGlow(now);
+    tickFinale(now);
+    renderParticles(now);
+    renderer.render(scene, camera);
   })();
 }
 
@@ -319,25 +351,31 @@ function play(tracksInput, posesInput, state) {
     labelMeshes[o].rotation.set(0, angle, 0);
   }
 
-  // glow: outline dice in state.glow
+  // glow: outline dice in state.glow; hide armed glow on play
   for (let i = 0; i < 16; i++) {
     glowMeshes[i].visible = false;
+    glowMeshes[i].children[0].visible = false;
+    armedGlowMeshes[i].visible = false;
+    armedGlowMeshes[i].children[0].visible = false;
   }
   const hasWinner = state.winner !== null;
   if (hasWinner) winnerState = state.winner;
   if (!hasWinner) {
     for (const id of state.glow || []) {
       glowMeshes[id].visible = true;
+      glowMeshes[id].children[0].visible = true;
     }
     glowT0 = playStart;
+    currentGlow = state.glow || [];
   } else {
     for (const g of glowMeshes) g.visible = false;
+    currentGlow = [];
   }
 
-  // dust: while winner === null, dust under active player's label
+  // dust: while winner === null, dust under active player's label (base of text)
   if (!hasWinner) {
     const lp = state.labels[state.turn].position;
-    dustAnchor = [lp[0], lp[1] - 0.6, lp[2]];
+    dustAnchor = [lp[0], lp[1] - LABEL.size / 2, lp[2]];
     sparks.dust(dustAnchor);
     genDust(dustAnchor);
     // end a running/done finale: stop sparkler and clear its particles
@@ -482,7 +520,27 @@ function tickGlow(now) {
   const hasWinner = finaleState && finaleState.started;
   if (hasWinner) {
     for (const g of glowMeshes) g.visible = false;
+    for (const g of armedGlowMeshes) g.visible = false;
     return;
+  }
+  // sync glow positions to dice (tracks, hold)
+  for (let i = 0; i < 16; i++) {
+    glowMeshes[i].position.set(diceMeshes[i].position.x, diceMeshes[i].position.y, diceMeshes[i].position.z);
+    glowMeshes[i].quaternion.copy(diceMeshes[i].quaternion);
+    armedGlowMeshes[i].position.set(diceMeshes[i].position.x, diceMeshes[i].position.y, diceMeshes[i].position.z);
+    armedGlowMeshes[i].quaternion.copy(diceMeshes[i].quaternion);
+  }
+  // armed glow: held dice (only when held forward, not turning back)
+  if (holdState && holdState.holdPosesById && !holdState.turningBack) {
+    const heldIds = Object.keys(holdState.holdPosesById).map(Number);
+    for (let i = 0; i < 16; i++) {
+      if (heldIds.includes(i)) {
+        armedGlowMeshes[i].visible = true;
+        armedGlowMeshes[i].children[0].visible = true;
+        glowMeshes[i].visible = false;
+        glowMeshes[i].children[0].visible = false;
+      }
+    }
   }
   const t = now - glowT0;
   const opacity = GLOW.min + (GLOW.max - GLOW.min) * (0.5 + 0.5 * Math.sin((2 * Math.PI * t) / GLOW.periodMs));
@@ -498,7 +556,7 @@ function tickGlow(now) {
 function tickFinale(now) {
   if (!finaleState || !finaleState.started) return;
   const tracksEnd = finaleState.tracksEnd;
-  const t = now - tracksEnd; // ms since finale began
+  const t = Math.max(0, now - tracksEnd); // ms since finale began
   // move the 12 dice not owned by winner on fly.flight
   const winner = findWinner();
   for (let i = 0; i < 16; i++) {
@@ -645,8 +703,13 @@ function canvasToWorldPoint(cx, cy, yTarget) {
 
 function hold(h) {
   if (h === null) {
-    // turning back to play poses
-    if (holdState && holdState.holdPosesById) {
+    // stop armed glow immediately
+    for (let i = 0; i < 16; i++) {
+      armedGlowMeshes[i].visible = false;
+      armedGlowMeshes[i].children[0].visible = false;
+    }
+    // turning back to play poses: only start a turn back if dice are held (not already turning back)
+    if (holdState && holdState.holdPosesById && !holdState.turningBack) {
       const now = performance.now();
       const turns = {};
       for (const idStr of Object.keys(holdState.holdPosesById)) {
@@ -663,8 +726,6 @@ function hold(h) {
         turns,
         turningBack: true,
       };
-    } else {
-      holdState = null;
     }
     return;
   }
@@ -687,6 +748,12 @@ function hold(h) {
     }
   }
   holdState = { poses, at, to, holdPosesById, turns, turningBack: false };
+  // armed glow: held dice show the steady armed glow
+  for (const idStr of Object.keys(holdPosesById)) {
+    const id = Number(idStr);
+    armedGlowMeshes[id].visible = true;
+    armedGlowMeshes[id].children[0].visible = true;
+  }
 }
 
 function pick({ x, y }) {
@@ -814,7 +881,7 @@ function renderParticles(now) {
 }
 
 function describe() {
-  if (!firstPlayDone) return { dice: [], labels: [], glow: [], animating, notice: noticeText, finale: null };
+  if (!firstPlayDone) return { dice: [], labels: [], glow: [], armed: [], dust: null, animating, notice: noticeText, finale: null };
   const dice = [];
   for (let i = 0; i < 16; i++) {
     const mesh = diceMeshes[i];
@@ -855,7 +922,7 @@ function describe() {
       }
       visibleValues.sort((a, b) => a - b);
     }
-    dice.push({ id: i, x: pr ? pr.x : 0, y: pr ? pr.y : 0, visibleFaces: visibleValues });
+    dice.push({ id: i, x: pr ? pr.x : 0, y: pr ? pr.y : 0, visibleFaces: visibleValues, q: quatArray(diceMeshes[i].quaternion) });
   }
   const labels = [];
   for (let o = 0; o < 4; o++) {
@@ -863,15 +930,15 @@ function describe() {
     const pr = projectToCanvas(m.position);
     labels.push({ owner: o, x: pr ? pr.x : 0, y: pr ? pr.y : 0, visible: m.visible });
   }
-  const glowIds = [];
+  const armedIds = [];
   for (let i = 0; i < 16; i++) {
-    if (glowMeshes[i].visible) glowIds.push(i);
+    if (armedGlowMeshes[i].visible) armedIds.push(i);
   }
   let finale = null;
   if (finaleState && finaleState.started) {
     finale = { t: performance.now() - finaleState.tracksEnd };
   }
-  return { dice, labels, glow: glowIds, animating, notice: noticeText, finale };
+  return { dice, labels, glow: currentGlow, armed: armedIds, dust: dustAnchor, animating, notice: noticeText, finale };
 }
 
 function diceFacesPerm(owner) {
