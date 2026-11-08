@@ -8,10 +8,12 @@ function radiusAround(p, anchor) {
 }
 
 function countGoldPixels(renderer, camera, w, h) {
-  const data = renderer.readPixels(camera, { x: 0, y: 0, width: w, height: h });
+  const gl = renderer.getContext();
+  const buf = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
   let gold = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+  for (let i = 0; i < buf.length; i += 4) {
+    const r = buf[i], g = buf[i + 1], b = buf[i + 2], a = buf[i + 3];
     if (a < 10) continue;
     // gold #ffd84a: r=255, g=216, b=74; allow twinkle/blend tolerance
     if (r >= 220 && r <= 255 && g >= 180 && g <= 225 && b >= 50 && b <= 100) {
@@ -34,11 +36,18 @@ export async function _sheo_sim(canvas, scenario) {
 
   init(scene);
   console.log("renderer methods:", Object.keys(renderer).filter(k => /read|pixel/i.test(k)).join(","));
+  const pts = scene.children.find((c) => c && c.isPoints);
+  console.log("points:", pts ? "exists" : "MISSING", "frustumCulled:", pts ? pts.frustumCulled : "n/a");
+  console.log("geometry:", pts ? pts.geometry.type : "n/a", "attrs:", pts ? Object.keys(pts.geometry.attributes || {}) : "n/a");
+  console.log("drawRange:", pts ? JSON.stringify(pts.geometry.drawRange) : "n/a");
+  console.log("material:", pts ? JSON.stringify({size: pts.material.size, sizeAttenuation: pts.material.sizeAttenuation, vertexColors: pts.material.vertexColors, blending: pts.material.blending, transparent: pts.material.transparent}) : "n/a");
 
   const a1 = [0, 1.5, 0];
   dust(a1);
   step(1000);
   const r1 = ring();
+  const pts2 = scene.children.find((c) => c && c.isPoints);
+  console.log("after step drawRange:", pts2 ? JSON.stringify(pts2.geometry.drawRange) : "n/a", "count:", count());
   let minR1 = Infinity, maxR1 = -Infinity;
   for (const p of r1) {
     const r = radiusAround(p, a1);
