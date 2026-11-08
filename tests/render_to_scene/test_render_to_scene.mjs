@@ -115,6 +115,58 @@ function makeLabels() {
   };
 }
 
+// ---- render signal to sparks helpers ----
+
+function snapshot(c) {
+  const c2 = document.createElement("canvas");
+  c2.width = 800; c2.height = 600;
+  const c2ctx = c2.getContext("2d");
+  c2ctx.drawImage(c, 0, 0);
+  return c2ctx.getImageData(0, 0, 800, 600);
+}
+
+function goldBox(c, owner) {
+  const labels = describe().labels;
+  const lbl = labels.find((l) => l.owner === owner);
+  const x0 = Math.round(lbl.x - 70), x1 = Math.round(lbl.x + 70);
+  const y0 = Math.round(lbl.y - 30), y1 = Math.round(lbl.y + 90);
+  const img = snapshot(c);
+  let count = 0;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const i = (y * 800 + x) * 4;
+      const r = img.data[i], g = img.data[i+1], b = img.data[i+2];
+      if (r > 190 && g > 150 && b < 140 && r - b > 90) count++;
+    }
+  }
+  return count;
+}
+
+function warmBelow(c, owner) {
+  const labels = describe().labels;
+  const lbl = labels.find((l) => l.owner === owner);
+  const x0 = Math.round(lbl.x - 70), x1 = Math.round(lbl.x + 70);
+  const y0 = Math.round(lbl.y + 30), y1 = Math.round(lbl.y + 110);
+  const img = snapshot(c);
+  let count = 0;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const i = (y * 800 + x) * 4;
+      const r = img.data[i], g = img.data[i+1], b = img.data[i+2];
+      if (r > 110 && r - b > 40 && g > 60) count++;
+    }
+  }
+  return count;
+}
+
+async function waitMs(ms) {
+  const start = performance.now();
+  for (let i = 0; i < 2000; i++) {
+    await nextFrame();
+    if (performance.now() - start >= ms) return;
+  }
+}
+
 export async function _sheo_check() {
   // add seed meta before init
   const meta = document.createElement("meta");
@@ -510,6 +562,31 @@ export async function _sheo_check() {
     const diff2 = Math.abs(a[0]+b[0])+Math.abs(a[1]+b[1])+Math.abs(a[2]+b[2])+Math.abs(a[3]+b[3]);
     assert.ok(Math.min(diff1, diff2) <= 4e-6, `die ${i} q unchanged: diff1=${diff1}, diff2=${diff2}`);
   }
+
+  // ---- render signal to sparks: the ring shows on scene's own canvas ----
+
+  // fresh init
+  init({ canvas, seat: 0 });
+  await nextFrame();
+  const posesRing = makePoses();
+  const labelsRing = makeLabels();
+
+  // 1. play turn 1, wait 1000ms: ring at P2's label (owner 1) shows
+  play([], posesRing, { turn: 1, glow: [], winner: null, labels: labelsRing });
+  await waitMs(1000);
+  const g1 = goldBox(canvas, 1);
+  assert.ok(g1 >= 300, `goldBox(1) >= 300: ${g1}`);
+  const w1 = warmBelow(canvas, 1);
+
+  // 2. play turn 3, wait 2500ms: ring moved to P4's (owner 3); P2's ring released and fallen
+  play([], posesRing, { turn: 3, glow: [], winner: null, labels: labelsRing });
+  await waitMs(2500);
+  const g3 = goldBox(canvas, 3);
+  assert.ok(g3 >= 300, `goldBox(3) >= 300: ${g3}`);
+  const g1After = goldBox(canvas, 1);
+  assert.ok(g1After <= 20, `goldBox(1) <= 20: ${g1After}`);
+  const w1After = warmBelow(canvas, 1);
+  assert.ok(w1 - w1After >= 300, `w1 - warmBelow(1) >= 300: ${w1 - w1After}`);
 }
 
 export const _sheo_browser = true;
