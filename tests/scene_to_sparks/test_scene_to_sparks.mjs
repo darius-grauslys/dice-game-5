@@ -274,4 +274,126 @@ export async function _sheo_check() {
   const cnt2 = count();
   assert.strictEqual(typeof cnt2, "number", "count returns number");
   assert.ok(Number.isInteger(cnt2) && cnt2 >= 0, "count is a non-negative integer");
+
+  // ---- render check: particles must really render (gold pixels on the ring and the dust) ----
+  {
+    // fresh scene with green background
+    const rscene = new THREE.Scene();
+    rscene.background = new THREE.Color(0x1a4d2e);
+    // canvas 400x300
+    const c = document.createElement("canvas");
+    c.width = 400;
+    c.height = 300;
+    const renderer = new THREE.WebGLRenderer({ canvas: c, antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(400, 300, false);
+    const camera = new THREE.PerspectiveCamera(45, 400 / 300, 0.1, 100);
+    camera.position.set(0, 6, 12);
+    camera.lookAt(0, 0, 0);
+
+    init(rscene);
+
+    // every THREE.Points in the scene has geometry instanceof THREE.BufferGeometry,
+    // geometry.attributes.position present with itemSize 3, and frustumCulled === false
+    const pointsList = [];
+    rscene.traverse((obj) => { if (obj.isPoints) pointsList.push(obj); });
+    for (const p of pointsList) {
+      assert.ok(p.geometry instanceof THREE.BufferGeometry, "Points geometry is BufferGeometry");
+      assert.ok(p.geometry.attributes && p.geometry.attributes.position, "Points has position attribute");
+      assert.strictEqual(p.geometry.attributes.position.itemSize, 3, "position attribute itemSize 3");
+      assert.strictEqual(p.frustumCulled, false, "Points frustumCulled false");
+    }
+
+    // dust([0, 1.1, 0]), step(16) 60 times (≈ 1 s), then render: does not throw
+    dust([0, 1.1, 0]);
+    for (let i = 0; i < 60; i++) step(16);
+    renderer.render(rscene, camera);
+
+    // read pixels and count gold pixels; rows are bottom-up
+    const gl = renderer.getContext();
+    const buf = new Uint8Array(400 * 300 * 4);
+    gl.readPixels(0, 0, 400, 300, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    let goldCount = 0;
+    for (let i = 0; i < 400 * 300; i++) {
+      const r = buf[i*4], g = buf[i*4+1], b = buf[i*4+2];
+      if (r > 190 && g > 150 && b < 140 && r - b > 90) goldCount++;
+    }
+    assert.ok(goldCount >= 150, `at least 150 gold pixels (got ${goldCount})`);
+
+    // the ring shows: project each of ring()'s 48 positions with the camera
+    const ringPos = ring();
+    const ringProjected = [];
+    let ringShown = 0;
+    for (let i = 0; i < 48; i++) {
+      const v = new THREE.Vector3(ringPos[i][0], ringPos[i][1], ringPos[i][2]);
+      v.project(camera);
+      const px = (v.x + 1) / 2 * 400;
+      const py = (1 - v.y) / 2 * 300;
+      ringProjected.push([px, py]);
+      // check gold pixel within 4px
+      let found = false;
+      for (let dy = -4; dy <= 4 && !found; dy++) {
+        for (let dx = -4; dx <= 4 && !found; dx++) {
+          const ix = Math.round(px + dx);
+          const iy_topdown = Math.round(py + dy);
+          if (ix >= 0 && ix < 400 && iy_topdown >= 0 && iy_topdown < 300) {
+            const iy_read = 299 - iy_topdown;
+            const idx = iy_read * 400 + ix;
+            const r = buf[idx*4], g = buf[idx*4+1], b = buf[idx*4+2];
+            if (r > 190 && g > 150 && b < 140 && r - b > 90) found = true;
+          }
+        }
+      }
+      if (found) ringShown++;
+    }
+    assert.ok(ringShown >= 36, `at least 36 of 48 ring positions have a gold pixel within 4px (got ${ringShown})`);
+
+    // dust falls below it: at least 10 warm pixels (r > 110 and r - b > 40) lie more than 12 px
+    // below the ring's lowest projected point (screen y greater), within the ring's projected x range ± 20 px
+    let ringMaxY = -Infinity;
+    let ringMinX = Infinity, ringMaxX = -Infinity;
+    for (const [px, py] of ringProjected) {
+      ringMaxY = Math.max(ringMaxY, py);
+      ringMinX = Math.min(ringMinX, px);
+      ringMaxX = Math.max(ringMaxX, px);
+    }
+    let warmBelow = 0;
+    for (let iy_read = 0; iy_read < 300; iy_read++) {
+      const screenY = 299 - iy_read;
+      if (screenY <= ringMaxY + 12) continue;
+      for (let ix = 0; ix < 400; ix++) {
+        if (ix < ringMinX - 20 || ix > ringMaxX + 20) continue;
+        const idx = iy_read * 400 + ix;
+        const r = buf[idx*4], g = buf[idx*4+1], b = buf[idx*4+2];
+        if (r > 110 && r - b > 40) warmBelow++;
+      }
+    }
+    assert.ok(warmBelow >= 10, `at least 10 warm pixels below ring (got ${warmBelow})`);
+
+    // dust(null), step(100) 50 times (5 s), render: at most 5 gold pixels
+    dust(null);
+    for (let i = 0; i < 50; i++) step(100);
+    renderer.render(rscene, camera);
+    gl.readPixels(0, 0, 400, 300, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    goldCount = 0;
+    for (let i = 0; i < 400 * 300; i++) {
+      const r = buf[i*4], g = buf[i*4+1], b = buf[i*4+2];
+      if (r > 190 && g > 150 && b < 140 && r - b > 90) goldCount++;
+    }
+    assert.ok(goldCount <= 5, `at most 5 gold pixels after dust(null) (got ${goldCount})`);
+
+    // sparkler([0, 2, 0]), step(16) 20 times, render: at least 100 pixels that are gold or white
+    sparkler([0, 2, 0]);
+    for (let i = 0; i < 20; i++) step(16);
+    renderer.render(rscene, camera);
+    gl.readPixels(0, 0, 400, 300, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    let sparkCount = 0;
+    for (let i = 0; i < 400 * 300; i++) {
+      const r = buf[i*4], g = buf[i*4+1], b = buf[i*4+2];
+      if (r > 190 && g > 150 && (r + g + b > 500)) sparkCount++;
+    }
+    assert.ok(sparkCount >= 100, `at least 100 gold or white pixels from sparkler (got ${sparkCount})`);
+    sparkler(null);
+
+    renderer.dispose();
+  }
 }
