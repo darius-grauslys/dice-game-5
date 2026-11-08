@@ -245,7 +245,7 @@ function init({ canvas, seat: s }) {
     tickHold(dt);
     tickGlow(now);
     tickFinale(now);
-    sparks.step(Math.min(100, Math.max(0, dt)));
+    sparks.step(Math.min(250, Math.max(0, dt)));
     renderer.render(scene, camera);
   })();
 }
