@@ -1,35 +1,5 @@
 import * as scene from "./index.mjs";
-import { YAW, DIE, LABEL, WIN, MS, GLOW } from "../../../../../../common/index.mjs";
-import * as THREE from "three";
-import { mat3ToMatrix4 } from "./math.mjs";
-import { ease, turnAt, sameRotation } from "./hold.mjs";
-
-const IDENTITY = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-const QY1 = [[0, 0, 1], [0, 1, 0], [-1, 0, 0]];
-const QY2 = [[-1, 0, 0], [0, 1, 0], [0, 0, -1]];
-
-function quatArray(q) {
-  return [q.x, q.y, q.z, q.w];
-}
-
-function mat3ToQuat(m) {
-  const m4 = mat3ToMatrix4(m);
-  const q = new THREE.Quaternion().setFromRotationMatrix(m4);
-  return [q.x, q.y, q.z, q.w];
-}
-
-function angleBetween(a, b) {
-  const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
-  return 2 * Math.acos(Math.abs(dot)) * 180 / Math.PI;
-}
-
-function deepFreeze(v) {
-  if (v && typeof v === "object") {
-    for (const key of Object.getOwnPropertyNames(v)) deepFreeze(v[key]);
-    Object.freeze(v);
-  }
-  return v;
-}
+import { YAW, LABEL } from "../../../../../../common/index.mjs";
 
 function buildPoses(seat) {
   const poses = [];
@@ -43,7 +13,7 @@ function buildPoses(seat) {
     const x = yaw[0][0] * bx + yaw[0][1] * by + yaw[0][2] * bz;
     const y = yaw[1][0] * bx + yaw[1][1] * by + yaw[1][2] * bz;
     const z = yaw[2][0] * bx + yaw[2][1] * by + yaw[2][2] * bz;
-    const matrix = id === 0 ? YAW[1] : IDENTITY;
+    const matrix = id === 0 ? YAW[1] : [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
     poses.push({ id, owner, group: owner, slot: k, position: [x, y, z], matrix });
   }
   return poses;
@@ -91,77 +61,39 @@ export async function _sheo_sim(canvas, scenario) {
   const seat = (scenario && scenario.seat) ?? 0;
   scene.init({ canvas, seat });
 
-  const poses = deepFreeze(buildPoses(seat));
-  const labels = deepFreeze(buildLabels(seat));
+  const poses = buildPoses(seat);
+  const labels = buildLabels(seat);
 
-  // 1. after a deal play with turn: 0: describe().dust and labels[0].position (y lower by 0.4)
-  scene.play([], poses, Object.freeze({ turn: 0, glow: [0], winner: null, labels }));
+  // 1. after a deal play with turn: 1: gold-pixel count in a 140x120 box around label 1's describe() position
+  scene.play([], poses, Object.freeze({ turn: 1, glow: [], winner: null, labels }));
   for (let i = 0; i < 60; i++) {
     await scene.nextFrame();
   }
-  const d0 = scene.describe();
-  const dustAnchor = d0.dust;
-  const label0Pos = scene._labelPosition(0);
-  console.log("1. dust:", dustAnchor, "labels[0].position y-0.4:", [label0Pos[0], label0Pos[1] - 0.4, label0Pos[2]]);
-
-  // 2. hold die 0 turned a quarter about y, once per frame for 400 ms: describe().armed, and angle between die 0's q before and now (~1.571 rad)
-  const qBefore = quatArray(scene._dieQuaternion(0));
-  const heldPose0 = { ...poses[0], matrix: QY2 };
-  const t0 = performance.now();
-  let armedAt400 = [];
-  let angleAt400 = 0;
-  for (let i = 0; i < 40; i++) {
-    scene.hold({ poses: [heldPose0], at: { x: 400, y: 300 }, to: { x: 400, y: 300 } });
-    await scene.nextFrame();
-    const elapsed = performance.now() - t0;
-    if (elapsed >= 400) {
-      armedAt400 = scene.describe().armed;
-      const qNow = quatArray(scene._dieQuaternion(0));
-      angleAt400 = angleBetween(qBefore, qNow) * Math.PI / 180;
-    }
-  }
-  console.log("2. describe().armed:", armedAt400, "angle (rad):", angleAt400.toFixed(4));
-
-  // 3. then hold(null) once per frame: angle back to start at ~125 ms (~0.785) and at 400 ms (~0), and describe().armed ([])
-  scene.hold(null);
-  const tb = performance.now();
-  let angleAt125 = null, angleAt400Back = null, armedAtEnd = [];
-  for (let i = 0; i < 80; i++) {
-    scene.hold(null);
-    await scene.nextFrame();
-    const elapsed = performance.now() - tb;
-    // sample 60..MS.turn-40 ms in, accept 5-95% of the turn
-    if (angleAt125 === null && elapsed >= 60 && elapsed <= MS.turn - 40) {
-      const qNow = quatArray(scene._dieQuaternion(0));
-      angleAt125 = angleBetween(qBefore, qNow) * Math.PI / 180;
-    }
-    if (elapsed >= MS.turn) {
-      const qNow = quatArray(scene._dieQuaternion(0));
-      angleAt400Back = angleBetween(qBefore, qNow) * Math.PI / 180;
-      armedAtEnd = scene.describe().armed;
-    }
-  }
-  console.log("3. angle back at ~125ms:", angleAt125 !== null ? angleAt125.toFixed(4) : null, "at ~400ms:", angleAt400Back !== null ? angleAt400Back.toFixed(4) : null, "armed:", armedAtEnd);
-
-  // 4. picture (or gold-pixel count in a box around die 0) held vs released
-  scene.hold({ poses: [{ ...poses[0], matrix: QY2 }], at: { x: 400, y: 300 }, to: { x: 400, y: 300 } });
-  const tHold = performance.now();
-  while (performance.now() - tHold < MS.turn + 150) {
+  const t1 = performance.now();
+  while (performance.now() - t1 < 1000) {
     await scene.nextFrame();
   }
-  const dHeld = scene.describe();
-  const boxHeld = { x: Math.round(dHeld.dice[0].x - 60), y: Math.round(dHeld.dice[0].y - 60), w: 120, h: 120 };
-  const goldHeld = countGoldPixels(canvas, boxHeld);
-  scene.hold(null);
-  const tRel = performance.now();
-  while (performance.now() - tRel < MS.turn + 150) {
+  let d1 = scene.describe();
+  const box1 = { x: Math.round(d1.labels[1].x - 70), y: Math.round(d1.labels[1].y - 60), w: 140, h: 120 };
+  const goldLabel1 = countGoldPixels(canvas, box1);
+  console.log("after play turn:1, gold pixels around label 1:", goldLabel1);
+
+  // 2. play with turn: 3: gold-pixel count for labels 3 and 1
+  scene.play([], poses, Object.freeze({ turn: 3, glow: [], winner: null, labels }));
+  for (let i = 0; i < 60; i++) {
     await scene.nextFrame();
   }
-  const dRel = scene.describe();
-  const boxRel = { x: Math.round(dRel.dice[0].x - 60), y: Math.round(dRel.dice[0].y - 60), w: 120, h: 120 };
-  const goldReleased = countGoldPixels(canvas, boxRel);
-  console.log("4. gold pixels around die 0: held=" + goldHeld + " released=" + goldReleased);
+  const t3 = performance.now();
+  while (performance.now() - t3 < 2500) {
+    await scene.nextFrame();
+  }
+  const d3 = scene.describe();
+  const box3 = { x: Math.round(d3.labels[3].x - 70), y: Math.round(d3.labels[3].y - 60), w: 140, h: 120 };
+  const goldLabel3 = countGoldPixels(canvas, box3);
+  const box1b = { x: Math.round(d3.labels[1].x - 70), y: Math.round(d3.labels[1].y - 60), w: 140, h: 120 };
+  const goldLabel1b = countGoldPixels(canvas, box1b);
+  console.log("after play turn:3, gold pixels around label 3:", goldLabel3, "label 1:", goldLabel1b);
 
-  const result = { dust: dustAnchor, label0: label0Pos, armedAt400, angleAt400, angleAt125, angleAt400Back, armedAtEnd, goldHeld, goldReleased };
+  const result = { goldLabel1, goldLabel3, goldLabel1b };
   return result;
 }
