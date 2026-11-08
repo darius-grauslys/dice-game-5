@@ -39,19 +39,22 @@ export function init(scene) {
   positions = new Float32Array(MAX * 3);
   colors = new Float32Array(MAX * 3);
   geometry = new THREE.BufferGeometry();
-  positionsAttr = new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage);
-  colorsAttr = new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage);
+  positionsAttr = new THREE.BufferAttribute(positions, 3);
+  colorsAttr = new THREE.BufferAttribute(colors, 3);
   geometry.setAttribute("position", positionsAttr);
   geometry.setAttribute("color", colorsAttr);
   geometry.setDrawRange(0, 0);
 
+  const gold = new THREE.Color("#ffd84a");
+
   const material = new THREE.PointsMaterial({
-    size: 0.14,
+    size: 0.3,
     sizeAttenuation: true,
     vertexColors: true,
     transparent: true,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
+    color: gold,
   });
 
   points = new THREE.Points(geometry, material);
@@ -112,7 +115,6 @@ function makeSparkler(anchor) {
   const vy = speed * Math.sin(phi) * Math.sin(theta);
   const vz = speed * Math.sin(phi) * Math.cos(phi);
   const life = 600 + Math.random() * 600;
-  const isGold = Math.random() < 0.7;
   return {
     type: "sparkler",
     x: anchor[0],
@@ -123,9 +125,9 @@ function makeSparkler(anchor) {
     vz,
     born: t,
     life,
-    cr: isGold ? 1 : 1,
-    cg: isGold ? 0.847 : 1,
-    cb: isGold ? 0.29 : 1,
+    cr: 1,
+    cg: 0.847,
+    cb: 0.29,
   };
 }
 
