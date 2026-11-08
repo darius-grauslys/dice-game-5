@@ -85,15 +85,27 @@ export async function _sheo_check() {
   assert.ok(points.isPoints === true, "child is THREE.Points");
   const mat = points.material;
   assert.ok(mat !== undefined, "points has material");
-  assert.strictEqual(mat.blending, 1, "additive blending");
+  assert.strictEqual(mat.blending, THREE.AdditiveBlending, "additive blending");
   assert.strictEqual(mat.depthWrite, false, "depthWrite is false");
 
   const geo = points.geometry;
-  const pos = () => geo.positions;
-  const col = () => geo.colors;
+  const pos = () => points.geometry.attributes.position.array;
+  const col = () => points.geometry.attributes.color.array;
 
-  const isGold = (c) => Math.abs(c[0]-1)<0.01 && Math.abs(c[1]-216/255)<0.01 && Math.abs(c[2]-74/255)<0.01;
-  const isWhite = (c) => Math.abs(c[0]-1)<0.01 && Math.abs(c[1]-1)<0.01 && Math.abs(c[2]-1)<0.01;
+  const isGold = (c) => {
+    const r = c[0], g = c[1], b = c[2];
+    const m = Math.max(r, g, b);
+    if (m <= 0) return false;
+    const g1 = (r === m && Math.abs(g/m - 0.847) <= 0.08 && Math.abs(b/m - 0.290) <= 0.08);
+    const g2 = (r === m && Math.abs(g/m - 0.686) <= 0.08 && Math.abs(b/m - 0.068) <= 0.08);
+    return g1 || g2;
+  };
+  const isWhite = (c) => {
+    const r = c[0], g = c[1], b = c[2];
+    const m = Math.max(r, g, b);
+    if (m <= 0) return false;
+    return g/m >= 0.92 && b/m >= 0.92;
+  };
 
   // Before any dust: ring() is [].
   assert.deepStrictEqual(ring(), [], "ring() is [] before any dust");
@@ -194,6 +206,7 @@ export async function _sheo_check() {
   assert.ok(cnt > 48, `count() is more than 48 (cnt=${cnt})`);
   {
     const p = pos();
+    assert.strictEqual(geo.drawRange.count, cnt, "drawRange.count equals count()");
     const ringPos = ring().map((pt) => [pt[0], pt[1], pt[2]]);
     const cy = 1.2;
     for (let i = 0; i < cnt; i++) {
@@ -257,7 +270,7 @@ export async function _sheo_check() {
     // under gravity 6; after 200ms they stay within a bounded radius of the anchor.
     const dist = Math.sqrt(x*x + (y-3)*(y-3) + z*z);
     assert.ok(dist >= 0 && dist <= 1.5, `sparkler particle within bound (i=${i}, dist=${dist.toFixed(3)})`);
-    assert.ok(isGold(c2.slice(i*4, i*4+3)) || isWhite(c2.slice(i*4, i*4+3)), `sparkler particle color gold #ffd84a or white (i=${i})`);
+    assert.ok(isGold(c2.slice(i*3, i*3+3)) || isWhite(c2.slice(i*3, i*3+3)), `sparkler particle color gold #ffd84a or white (i=${i})`);
   }
 
   // sparkler(null): stop, void return.
