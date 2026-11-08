@@ -64,16 +64,17 @@ function buildLabels(seat) {
 
 function countGoldPixels(canvas, box) {
   try {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return 0;
-    const img = ctx.getImageData(box.x, box.y, box.w, box.h).data;
+    const c2d = document.createElement("canvas");
+    c2d.width = canvas.width;
+    c2d.height = canvas.height;
+    const c2dctx = c2d.getContext("2d");
+    if (!c2dctx) return 0;
+    c2dctx.drawImage(canvas, 0, 0);
+    const img = c2dctx.getImageData(box.x, box.y, box.w, box.h).data;
     let count = 0;
     for (let i = 0; i < img.length; i += 4) {
-      const a = img[i + 3];
-      if (a > 20) {
-        const r = img[i], g = img[i + 1], b = img[i + 2];
-        if (r > 190 && g > 150 && b < 140 && (r - b) > 90) count++;
-      }
+      const r = img[i], g = img[i + 1], b = img[i + 2], a = img[i + 3];
+      if (a > 20 && r > 190 && g > 150 && b < 140 && (r - b) > 90) count++;
     }
     return count;
   } catch (e) {
@@ -144,12 +145,21 @@ export async function _sheo_sim(canvas, scenario) {
 
   // 4. picture (or gold-pixel count in a box around die 0) held vs released
   scene.hold({ poses: [{ ...poses[0], matrix: QY2 }], at: { x: 400, y: 300 }, to: { x: 400, y: 300 } });
-  for (let i = 0; i < 30; i++) await scene.nextFrame();
-  const boxHeld = { x: 340, y: 210, w: 120, h: 120 };
+  const tHold = performance.now();
+  while (performance.now() - tHold < MS.turn + 150) {
+    await scene.nextFrame();
+  }
+  const dHeld = scene.describe();
+  const boxHeld = { x: Math.round(dHeld.dice[0].x - 60), y: Math.round(dHeld.dice[0].y - 60), w: 120, h: 120 };
   const goldHeld = countGoldPixels(canvas, boxHeld);
   scene.hold(null);
-  for (let i = 0; i < 30; i++) await scene.nextFrame();
-  const goldReleased = countGoldPixels(canvas, boxHeld);
+  const tRel = performance.now();
+  while (performance.now() - tRel < MS.turn + 150) {
+    await scene.nextFrame();
+  }
+  const dRel = scene.describe();
+  const boxRel = { x: Math.round(dRel.dice[0].x - 60), y: Math.round(dRel.dice[0].y - 60), w: 120, h: 120 };
+  const goldReleased = countGoldPixels(canvas, boxRel);
   console.log("4. gold pixels around die 0: held=" + goldHeld + " released=" + goldReleased);
 
   const result = { dust: dustAnchor, label0: label0Pos, armedAt400, angleAt400, angleAt125, angleAt400Back, armedAtEnd, goldHeld, goldReleased };
