@@ -16,6 +16,9 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CHECK = path.join(ROOT, "tools", "check.mjs");
+// check.mjs's per-child timeout; browser tests get twice this. The scene edge test holds several phases'
+// checks and real particles make headless frames slow: 60 s (the default 30 s × 2) was no longer enough.
+const TIMEOUT_MS = "90000";
 const ID = /^(tree|[ntsc]-[A-Za-z0-9_-]+)$/;
 const [verb, ...args] = process.argv.slice(2);
 const print = (o) => process.stdout.write(JSON.stringify(o) + "\n");
@@ -32,7 +35,7 @@ const tests = [], texts = [];
 for (const id of args.length ? args : ["tree"]) {
   if (!ID.test(id)) { tests.push({ id, status: "error", message: "not an agent id" }); continue; }
   const t0 = Date.now();
-  const r = spawnSync(process.execPath, [CHECK, "--root", ROOT, ...(id === "tree" ? [] : ["--agent", id])],
+  const r = spawnSync(process.execPath, [CHECK, "--root", ROOT, "--timeout", TIMEOUT_MS, ...(id === "tree" ? [] : ["--agent", id])],
                       { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 });
   const out = (r.stdout || "") + (r.stderr || "");
   process.stderr.write(`--- check ${id}\n${out}`);
