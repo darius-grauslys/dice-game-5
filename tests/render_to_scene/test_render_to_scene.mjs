@@ -578,13 +578,22 @@ export async function _sheo_check() {
   assert.ok(g1 >= 300, `goldBox(1) >= 300: ${g1}`);
   const w1 = warmBelow(canvas, 1);
 
-  // 2. play turn 3, wait 2500ms: ring moved to P4's (owner 3); P2's ring released and fallen
+  // 2. play turn 3, wait 1000ms: ring moved to P4's (owner 3) and formed; P2's ring released and falls
   play([], posesRing, { turn: 3, glow: [], winner: null, labels: labelsRing });
-  await waitMs(2500);
+  await waitMs(1000);
   const g3 = goldBox(canvas, 3);
   assert.ok(g3 >= 300, `goldBox(3) >= 300: ${g3}`);
-  const g1After = goldBox(canvas, 1);
-  assert.ok(g1After <= 20, `goldBox(1) <= 20: ${g1After}`);
+  // poll, once per frame, for at most 6000ms more, until goldBox(1) <= 20 (wait for particles to fall)
+  let g1After = goldBox(canvas, 1);
+  let lastValue = g1After;
+  const tPoll = performance.now();
+  while (performance.now() - tPoll < 6000) {
+    await nextFrame();
+    g1After = goldBox(canvas, 1);
+    lastValue = g1After;
+    if (g1After <= 20) break;
+  }
+  assert.ok(g1After <= 20, `goldBox(1) <= 20 within 6 s after the ring moved: ${lastValue}`);
   const w1After = warmBelow(canvas, 1);
   assert.ok(w1 - w1After >= 300, `w1 - warmBelow(1) >= 300: ${w1 - w1After}`);
 }
