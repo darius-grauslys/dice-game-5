@@ -129,17 +129,18 @@ export async function _sheo_sim(canvas, scenario) {
     scene.hold(null);
     await scene.nextFrame();
     const elapsed = performance.now() - tb;
-    if (elapsed >= 125 && elapsed < 525 && angleAt125 === null) {
+    // sample 60..MS.turn-40 ms in, accept 5-95% of the turn
+    if (angleAt125 === null && elapsed >= 60 && elapsed <= MS.turn - 40) {
       const qNow = quatArray(scene._dieQuaternion(0));
       angleAt125 = angleBetween(qBefore, qNow) * Math.PI / 180;
     }
-    if (elapsed >= 400) {
+    if (elapsed >= MS.turn) {
       const qNow = quatArray(scene._dieQuaternion(0));
       angleAt400Back = angleBetween(qBefore, qNow) * Math.PI / 180;
       armedAtEnd = scene.describe().armed;
     }
   }
-  console.log("3. angle back at ~125ms:", angleAt125 ? angleAt125.toFixed(4) : null, "at ~400ms:", angleAt400Back ? angleAt400Back.toFixed(4) : null, "armed:", armedAtEnd);
+  console.log("3. angle back at ~125ms:", angleAt125 !== null ? angleAt125.toFixed(4) : null, "at ~400ms:", angleAt400Back !== null ? angleAt400Back.toFixed(4) : null, "armed:", armedAtEnd);
 
   // 4. picture (or gold-pixel count in a box around die 0) held vs released
   scene.hold({ poses: [{ ...poses[0], matrix: QY2 }], at: { x: 400, y: 300 }, to: { x: 400, y: 300 } });

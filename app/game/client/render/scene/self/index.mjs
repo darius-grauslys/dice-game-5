@@ -251,17 +251,12 @@ function init({ canvas, seat: s }) {
     lastFrameTime = now;
     if (!firstPlayDone && diceMeshes.length > 0) {
     }
-    try {
-      tickTracks(dt);
-      tickHold(dt);
-      tickGlow(now);
-      tickFinale(now);
-      renderParticles(now);
-      const pts = scene.children.find(c => c.isPoints);
-      renderer.render(scene, camera);
-    } catch (e) {
-      console.log("RENDER ERROR:", (e && e.message) || String(e));
-    }
+    tickTracks(dt);
+    tickHold(dt);
+    tickGlow(now);
+    tickFinale(now);
+    renderParticles(now);
+    renderer.render(scene, camera);
   })();
 }
 
@@ -517,9 +512,6 @@ function tickHold(dt) {
       const elapsed = now - turn.start;
       const q = turnAt(turn.from, turn.to, elapsed, MS.turn);
       diceMeshes[id].quaternion.set(q[0], q[1], q[2], q[3]);
-      if (id === 0 && elapsed < 300) {
-        console.log("tickHold id0 elapsed:", elapsed.toFixed(1), "t:", (elapsed/MS.turn).toFixed(3), "q:", q.map(x=>x.toFixed(3)));
-      }
     }
   }
 }
@@ -564,7 +556,7 @@ function tickGlow(now) {
 function tickFinale(now) {
   if (!finaleState || !finaleState.started) return;
   const tracksEnd = finaleState.tracksEnd;
-  const t = now - tracksEnd; // ms since finale began
+  const t = Math.max(0, now - tracksEnd); // ms since finale began
   // move the 12 dice not owned by winner on fly.flight
   const winner = findWinner();
   for (let i = 0; i < 16; i++) {
