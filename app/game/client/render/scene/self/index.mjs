@@ -72,11 +72,13 @@ function makeArmedGlow(mesh) {
     group.add(mesh.clone());
   }
   group.scale.set(1.25, 1.25, 1.25);
-  const mat = new THREE.MeshStandardMaterial({
+  const mat = new THREE.MeshBasicMaterial({
     color: GLOW.colour,
     side: THREE.BackSide,
     blending: THREE.AdditiveBlending,
+    transparent: true,
     opacity: 1,
+    depthWrite: false,
   });
   for (const c of group.children) {
     if (c.material) c.material = mat;
@@ -357,13 +359,16 @@ function play(tracksInput, posesInput, state) {
   // glow: outline dice in state.glow; hide armed glow on play
   for (let i = 0; i < 16; i++) {
     glowMeshes[i].visible = false;
+    glowMeshes[i].children[0].visible = false;
     armedGlowMeshes[i].visible = false;
+    armedGlowMeshes[i].children[0].visible = false;
   }
   const hasWinner = state.winner !== null;
   if (hasWinner) winnerState = state.winner;
   if (!hasWinner) {
     for (const id of state.glow || []) {
       glowMeshes[id].visible = true;
+      glowMeshes[id].children[0].visible = true;
     }
     glowT0 = playStart;
     currentGlow = state.glow || [];
@@ -512,6 +517,9 @@ function tickHold(dt) {
       const elapsed = now - turn.start;
       const q = turnAt(turn.from, turn.to, elapsed, MS.turn);
       diceMeshes[id].quaternion.set(q[0], q[1], q[2], q[3]);
+      if (id === 0 && elapsed < 300) {
+        console.log("tickHold id0 elapsed:", elapsed.toFixed(1), "t:", (elapsed/MS.turn).toFixed(3), "q:", q.map(x=>x.toFixed(3)));
+      }
     }
   }
 }
@@ -536,7 +544,9 @@ function tickGlow(now) {
     for (let i = 0; i < 16; i++) {
       if (heldIds.includes(i)) {
         armedGlowMeshes[i].visible = true;
+        armedGlowMeshes[i].children[0].visible = true;
         glowMeshes[i].visible = false;
+        glowMeshes[i].children[0].visible = false;
       }
     }
   }
@@ -702,7 +712,10 @@ function canvasToWorldPoint(cx, cy, yTarget) {
 function hold(h) {
   if (h === null) {
     // stop armed glow immediately
-    for (let i = 0; i < 16; i++) armedGlowMeshes[i].visible = false;
+    for (let i = 0; i < 16; i++) {
+      armedGlowMeshes[i].visible = false;
+      armedGlowMeshes[i].children[0].visible = false;
+    }
     // turning back to play poses: only start a turn back if dice are held (not already turning back)
     if (holdState && holdState.holdPosesById && !holdState.turningBack) {
       const now = performance.now();
@@ -747,6 +760,7 @@ function hold(h) {
   for (const idStr of Object.keys(holdPosesById)) {
     const id = Number(idStr);
     armedGlowMeshes[id].visible = true;
+    armedGlowMeshes[id].children[0].visible = true;
   }
 }
 

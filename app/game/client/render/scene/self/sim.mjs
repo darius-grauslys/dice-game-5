@@ -68,15 +68,11 @@ function countGoldPixels(canvas, box) {
     if (!ctx) return 0;
     const img = ctx.getImageData(box.x, box.y, box.w, box.h).data;
     let count = 0;
-    const gold = GLOW.colour; // #ffd84a
-    const r = parseInt(gold.slice(1, 3), 16);
-    const g = parseInt(gold.slice(3, 5), 16);
-    const b = parseInt(gold.slice(5, 7), 16);
     for (let i = 0; i < img.length; i += 4) {
       const a = img[i + 3];
       if (a > 20) {
-        const dr = img[i] - r, dg = img[i + 1] - g, db = img[i + 2] - b;
-        if (dr * dr + dg * dg + db * db <= 900) count++;
+        const r = img[i], g = img[i + 1], b = img[i + 2];
+        if (r > 190 && g > 150 && b < 140 && (r - b) > 90) count++;
       }
     }
     return count;
@@ -148,7 +144,7 @@ export async function _sheo_sim(canvas, scenario) {
   // 4. picture (or gold-pixel count in a box around die 0) held vs released
   scene.hold({ poses: [{ ...poses[0], matrix: QY2 }], at: { x: 400, y: 300 }, to: { x: 400, y: 300 } });
   for (let i = 0; i < 30; i++) await scene.nextFrame();
-  const boxHeld = { x: 350, y: 220, w: 100, h: 100 };
+  const boxHeld = { x: 340, y: 210, w: 120, h: 120 };
   const goldHeld = countGoldPixels(canvas, boxHeld);
   scene.hold(null);
   for (let i = 0; i < 30; i++) await scene.nextFrame();
