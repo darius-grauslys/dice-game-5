@@ -38,10 +38,7 @@ let finaleState = null; // {started: bool, tracksEnd: number}
 let glowT0 = 0;
 let dustAnchor = null;
 let sparklerAnchor = null;
-let myPoints = null;
 let lastFrameTime = 0;
-let dustParticles = [];
-let sparklerParticles = [];
 let stateLabels = null;
 
 function makeGlow(mesh) {
@@ -195,13 +192,6 @@ function init({ canvas, seat: s }) {
 
   // sparks
   sparks.init(scene);
-  let pts = scene.children.find(c => c.isPoints);
-  if (pts) scene.remove(pts);
-  const pgeom = new THREE.BufferGeometry();
-  const pmat = new THREE.PointsMaterial({ color: 0xffd84a, size: 2 });
-  myPoints = new THREE.Points(pgeom, pmat);
-  myPoints.depthWrite = false;
-  scene.add(myPoints);
 
   // notice DOM element
   noticeEl = document.createElement("div");
@@ -255,7 +245,7 @@ function init({ canvas, seat: s }) {
     tickHold(dt);
     tickGlow(now);
     tickFinale(now);
-    renderParticles(now);
+    sparks.step(Math.min(100, Math.max(0, dt)));
     renderer.render(scene, camera);
   })();
 }
@@ -377,15 +367,12 @@ function play(tracksInput, posesInput, state) {
     const lp = state.labels[state.turn].position;
     dustAnchor = [lp[0], lp[1] - LABEL.size / 2, lp[2]];
     sparks.dust(dustAnchor);
-    genDust(dustAnchor);
     // end a running/done finale: stop sparkler and clear its particles
     sparks.sparkler(null);
     sparklerAnchor = null;
-    sparklerParticles = [];
   } else {
     sparks.dust(null);
     dustAnchor = null;
-    dustParticles = [];
   }
 
   // tracks end time: max over tracks of (playStart + delay + ms), or playStart if no tracks
@@ -633,7 +620,6 @@ function tickFinale(now) {
       if (!sparklerAnchor) {
         sparklerAnchor = [0, 2.5, 0];
         sparks.sparkler(sparklerAnchor);
-        genSparkler(sparklerAnchor);
       }
     }
   }
@@ -812,74 +798,6 @@ function findSeed() {
   return seed;
 }
 
-const MAX_PARTICLES = 200;
-let particlePositions = new Float32Array(MAX_PARTICLES * 3);
-let particleSizes = new Float32Array(MAX_PARTICLES);
-
-function genDust(anchor, count) {
-  dustParticles = [];
-  const n = count || 40;
-  for (let i = 0; i < n; i++) {
-    dustParticles.push({
-      ox: (Math.random() - 0.5) * 1.6,
-      oy: -0.15 - Math.random() * 0.7,
-      oz: (Math.random() - 0.5) * 1.6,
-      phase: Math.random() * Math.PI * 2,
-    });
-  }
-}
-
-function genSparkler(anchor, count) {
-  sparklerParticles = [];
-  const n = count || 60;
-  for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const r = 0.05 + Math.random() * 0.7;
-    const h = -0.2 - Math.random() * 0.9;
-    sparklerParticles.push({
-      ax: Math.cos(a), ay: 1, az: Math.sin(a),
-      r: r, h: h,
-      phase: Math.random() * Math.PI * 2,
-      speed: 0.5 + Math.random() * 1.5,
-    });
-  }
-}
-
-function renderParticles(now) {
-  let idx = 0;
-  const anchor = dustAnchor;
-  if (anchor && dustParticles.length) {
-    for (const p of dustParticles) {
-      if (idx >= MAX_PARTICLES) break;
-      particlePositions[idx * 3] = anchor[0] + p.ox;
-      particlePositions[idx * 3 + 1] = anchor[1] + p.oy;
-      particlePositions[idx * 3 + 2] = anchor[2] + p.oz;
-      particleSizes[idx] = 2.5;
-      idx++;
-    }
-  }
-  const sanchor = sparklerAnchor;
-  if (sanchor && sparklerParticles.length) {
-    for (const p of sparklerParticles) {
-      if (idx >= MAX_PARTICLES) break;
-      const flick = 0.5 + 0.5 * Math.sin(now * 0.012 * p.speed + p.phase);
-      particlePositions[idx * 3] = sanchor[0] + p.ax * p.r;
-      particlePositions[idx * 3 + 1] = sanchor[1] + p.h + flick * 0.15;
-      particlePositions[idx * 3 + 2] = sanchor[2] + p.az * p.r;
-      particleSizes[idx] = 2 + flick * 3;
-      idx++;
-    }
-  }
-  const view = particlePositions.slice(0, idx * 3);
-  if (myPoints && myPoints.geometry) {
-    if (myPoints.geometry.setPositions) {
-      myPoints.geometry.setPositions(view);
-    } else if (myPoints.geometry.positions) {
-      myPoints.geometry.positions.set(view);
-    }
-  }
-}
-
 function describe() {
   if (!firstPlayDone) return { dice: [], labels: [], glow: [], armed: [], dust: null, animating, notice: noticeText, finale: null };
   const dice = [];
@@ -987,8 +905,4 @@ export function _labelPosition(o) {
 
 export function _sparklerAnchor() {
   return sparklerAnchor;
-}
-
-export function _sparklerParticleCount() {
-  return sparklerParticles.length;
 }
