@@ -1,5 +1,5 @@
 import * as real from "../../edges/render/render_to_scene.mjs";
-import { DIE, PLAYERS, YAW, CAMERA, GLOW, WIN, FOLLOW, FACE_PERMS } from "../../common/index.mjs";
+import { DIE, PLAYERS, YAW, CAMERA, GLOW, WIN, FOLLOW, FACE_PERMS, LABEL, MS } from "../../common/index.mjs";
 import assert from "node:assert/strict";
 
 // ---- wrappers: check args (A), call real (B), check returned (C), check return (D) ----
@@ -67,8 +67,14 @@ export function pick(input) {
 export function describe() {
   const r = real.describe();
   if (r === null || typeof r !== "object") throw new Error("describe: expected an object");
-  if (!("dice" in r) || !("labels" in r) || !("glow" in r) || !("animating" in r) || !("notice" in r) || !("finale" in r))
+  if (!("dice" in r) || !("labels" in r) || !("glow" in r) || !("armed" in r) || !("dust" in r) || !("animating" in r) || !("notice" in r) || !("finale" in r))
     throw new Error("describe: missing fields");
+  if (Array.isArray(r.dice)) {
+    for (const d of r.dice) {
+      if (!("id" in d) || !("x" in d) || !("y" in d) || !("visibleFaces" in d) || !("q" in d))
+        throw new Error("describe.dice: missing fields");
+    }
+  }
   return r;
 }
 
@@ -280,6 +286,224 @@ export async function _sheo_check() {
     const before = labelsBefore[lbl.owner];
     const dist = Math.hypot(lbl.x - before.x, lbl.y - before.y);
     assert.ok(dist <= 1, `label owner ${lbl.owner} within 1px after reset: ${dist}`);
+  }
+
+  // ---- edge checks: dust at base of text, snap back, armed glow ----
+
+  function angle(q1, q2) {
+    const dot = q1[0]*q2[0] + q1[1]*q2[1] + q1[2]*q2[2] + q1[3]*q2[3];
+    return 2 * Math.acos(Math.min(1, Math.abs(dot)));
+  }
+
+  function matMul(a, b) {
+    const c = [[0,0,0],[0,0,0],[0,0,0]];
+    for (let i = 0; i < 3; i++)
+      for (let j = 0; j < 3; j++)
+        for (let k = 0; k < 3; k++)
+          c[i][j] += a[i][k] * b[k][j];
+    return c;
+  }
+
+  // setup: init, play with turn 0, glow [], wait 5 frames
+  init({ canvas, seat: 0 });
+  await nextFrame();
+  const posesEdge = makePoses();
+  const labelsEdge = makeLabels();
+  play([], posesEdge, { turn: 0, glow: [], winner: null, labels: labelsEdge });
+  for (let i = 0; i < 5; i++) await nextFrame();
+
+  const q0 = describe().dice.find((d) => d.id === 0).q;
+
+  // turned pose: die 0's pose with matrix replaced by a quarter turn about +y
+  const p0 = posesEdge.find((p) => p.id === 0);
+  const Q = [[0,0,1],[0,1,0],[-1,0,0]];
+  const newMatrix = matMul(Q, p0.matrix);
+  const turnedPose = { id: 0, position: p0.position, matrix: newMatrix };
+
+  // Dust at the base of the text: after setup play (turn 0)
+  let dEdge = describe();
+  const expectedDust0 = [labelsEdge[0].position[0], labelsEdge[0].position[1] - LABEL.size / 2, labelsEdge[0].position[2]];
+  assert.deepStrictEqual(dEdge.dust, expectedDust0);
+
+  // After a play with turn: 2
+  play([], posesEdge, { turn: 2, glow: [], winner: null, labels: labelsEdge });
+  for (let i = 0; i < 5; i++) await nextFrame();
+  dEdge = describe();
+  const expectedDust2 = [labelsEdge[2].position[0], labelsEdge[2].position[1] - LABEL.size / 2, labelsEdge[2].position[2]];
+  assert.deepStrictEqual(dEdge.dust, expectedDust2);
+
+  // After a play with a winner: null
+  play([], posesEdge, { turn: 0, glow: [], winner: 2, labels: labelsEdge });
+  for (let i = 0; i < 5; i++) await nextFrame();
+  dEdge = describe();
+  assert.strictEqual(dEdge.dust, null);
+
+  // reset glow [] for armed glow checks
+  play([], posesEdge, { turn: 0, glow: [], winner: null, labels: labelsEdge });
+  for (let i = 0; i < 5; i++) await nextFrame();
+
+  // Armed glow: right after setup play (glow: []): armed is []
+  dEdge = describe();
+  assert.deepStrictEqual(dEdge.armed, []);
+
+  // hold die 0's turned pose: armed is [0] after 2 frames, still [0] after 10 more frames; glow still []
+  hold({ poses: [turnedPose], at: {x: 400, y: 300}, to: {x: 400, y: 300} });
+  for (let i = 0; i < 2; i++) await nextFrame();
+  dEdge = describe();
+  assert.deepStrictEqual(dEdge.armed, [0]);
+  assert.deepStrictEqual(dEdge.glow, []);
+  for (let i = 0; i < 10; i++) await nextFrame();
+  dEdge = describe();
+  assert.deepStrictEqual(dEdge.armed, [0]);
+  assert.deepStrictEqual(dEdge.glow, []);
+
+  // hold(null): armed is [] at once (check after 1 frame)
+  hold(null);
+  await nextFrame();
+  dEdge = describe();
+  assert.deepStrictEqual(dEdge.armed, []);
+
+  // With state.glow set: play with glow [0,1], hold die 0's turned pose: armed [0], glow [0,1]
+  play([], posesEdge, { turn: 0, glow: [0, 1], winner: null, labels: labelsEdge });
+  for (let i = 0; i < 5; i++) await nextFrame();
+  hold({ poses: [turnedPose], at: {x: 400, y: 300}, to: {x: 400, y: 300} });
+  await nextFrame();
+  dEdge = describe();
+  assert.deepStrictEqual(dEdge.armed, [0]);
+  assert.deepStrictEqual(dEdge.glow, [0, 1]);
+  // then a play (same poses, no tracks): armed []
+  play([], posesEdge, { turn: 0, glow: [0, 1], winner: null, labels: labelsEdge });
+  await nextFrame();
+  dEdge = describe();
+  assert.deepStrictEqual(dEdge.armed, []);
+
+  // On the canvas: armed glow draws gold pixels around die 0
+  play([], posesEdge, { turn: 2, glow: [], winner: null, labels: labelsEdge });
+  for (let i = 0; i < 200; i++) await nextFrame();
+  hold({ poses: [turnedPose], at: {x: 400, y: 300}, to: {x: 400, y: 300} });
+  const tHold = performance.now();
+  for (let i = 0; i < 200; i++) {
+    await nextFrame();
+    if (performance.now() - tHold >= MS.turn + 150) break;
+    hold({ poses: [turnedPose], at: {x: 400, y: 300}, to: {x: 400, y: 300} });
+  }
+  const die0px = describe().dice.find((d) => d.id === 0);
+  const x0 = Math.round(die0px.x - 60), y0 = Math.round(die0px.y - 60);
+  const c2 = document.createElement("canvas");
+  c2.width = 800; c2.height = 600;
+  const c2ctx = c2.getContext("2d");
+  c2ctx.drawImage(canvas, 0, 0);
+  const img = c2ctx.getImageData(x0, y0, 120, 120);
+  let goldCount = 0;
+  for (let i = 0; i < img.data.length; i += 4) {
+    const r = img.data[i], g = img.data[i+1], b = img.data[i+2];
+    if (r > 190 && g > 150 && b < 140 && r - b > 90) goldCount++;
+  }
+  const firstCount = goldCount;
+
+  hold(null);
+  const tHold2 = performance.now();
+  for (let i = 0; i < 200; i++) {
+    await nextFrame();
+    if (performance.now() - tHold2 >= MS.turn + 150) break;
+    hold(null);
+  }
+  const die0pxb = describe().dice.find((d) => d.id === 0);
+  const x1 = Math.round(die0pxb.x - 60), y1 = Math.round(die0pxb.y - 60);
+  const c2b = document.createElement("canvas");
+  c2b.width = 800; c2b.height = 600;
+  const c2ctxb = c2b.getContext("2d");
+  c2ctxb.drawImage(canvas, 0, 0);
+  const imgb = c2ctxb.getImageData(x1, y1, 120, 120);
+  let goldCount2 = 0;
+  for (let i = 0; i < imgb.data.length; i += 4) {
+    const r = imgb.data[i], g = imgb.data[i+1], b = imgb.data[i+2];
+    if (r > 190 && g > 150 && b < 140 && r - b > 90) goldCount2++;
+  }
+  const secondCount = goldCount2;
+  assert.ok(firstCount - secondCount >= 40, `gold pixels: first=${firstCount}, second=${secondCount}`);
+
+  // ---- Snap back (repeated hold(null)) ----
+
+  // setup: init, play with turn 0, glow [], wait 5 frames
+  init({ canvas, seat: 0 });
+  await nextFrame();
+  play([], posesEdge, { turn: 0, glow: [], winner: null, labels: labelsEdge });
+  for (let i = 0; i < 5; i++) await nextFrame();
+  const q0s = describe().dice.find((d) => d.id === 0).q;
+
+  // hold turned pose once per frame for MS.turn + 150 ms; record q as q1
+  hold({ poses: [turnedPose], at: {x: 400, y: 300}, to: {x: 400, y: 300} });
+  const tStart = performance.now();
+  let q1 = null;
+  for (let i = 0; i < 300; i++) {
+    await nextFrame();
+    const q = describe().dice.find((d) => d.id === 0).q;
+    if (performance.now() - tStart >= MS.turn + 150) { q1 = q; break; }
+    hold({ poses: [turnedPose], at: {x: 400, y: 300}, to: {x: 400, y: 300} });
+  }
+  assert.ok(q1, "q1 should be set");
+  assert.ok(Math.abs(angle(q0s, q1) - Math.PI / 2) <= 0.05, `angle(q0,q1)=${angle(q0s,q1)}`);
+
+  // hold(null) once per frame. At first frame with elapsed in 100..150 ms, angle 20%-80% of angle(q0,q1).
+  // By MS.turn + 100 ms after first hold(null), angle < 0.02.
+  hold(null);
+  const tH0 = performance.now();
+  let midAngle = null;
+  let finalAngle = null;
+  for (let i = 0; i < 300; i++) {
+    await nextFrame();
+    const elapsed = performance.now() - tH0;
+    const q = describe().dice.find((d) => d.id === 0).q;
+    const a = angle(q0s, q);
+    if (elapsed >= 100 && elapsed <= 150 && midAngle === null) midAngle = a;
+    if (elapsed >= MS.turn + 100) { finalAngle = a; break; }
+    hold(null);
+  }
+  assert.ok(midAngle !== null, "midAngle should be set");
+  assert.ok(midAngle >= 0.2 * angle(q0s, q1) && midAngle <= 0.8 * angle(q0s, q1), `midAngle=${midAngle}, q0q1=${angle(q0s,q1)}`);
+  assert.ok(finalAngle < 0.02, `finalAngle=${finalAngle}`);
+
+  // Same again, but hold(null) called only once: same two checks pass.
+  hold({ poses: [turnedPose], at: {x: 400, y: 300}, to: {x: 400, y: 300} });
+  for (let i = 0; i < 300; i++) {
+    await nextFrame();
+    if (performance.now() - tStart >= MS.turn + 150) break;
+    hold({ poses: [turnedPose], at: {x: 400, y: 300}, to: {x: 400, y: 300} });
+  }
+  hold(null);
+  const tH0b = performance.now();
+  let midAngleB = null;
+  let finalAngleB = null;
+  for (let i = 0; i < 300; i++) {
+    await nextFrame();
+    const elapsed = performance.now() - tH0b;
+    const q = describe().dice.find((d) => d.id === 0).q;
+    const a = angle(q0s, q);
+    if (elapsed >= 100 && elapsed <= 150 && midAngleB === null) midAngleB = a;
+    if (elapsed >= MS.turn + 100) { finalAngleB = a; break; }
+  }
+  assert.ok(midAngleB !== null, "midAngleB should be set");
+  assert.ok(midAngleB >= 0.2 * angle(q0s, q1) && midAngleB <= 0.8 * angle(q0s, q1), `midAngleB=${midAngleB}, q0q1=${angle(q0s,q1)}`);
+  assert.ok(finalAngleB < 0.02, `finalAngleB=${finalAngleB}`);
+
+  // With nothing ever held since the last play: hold(null) once per frame for 300 ms leaves every die's q unchanged.
+  play([], posesEdge, { turn: 0, glow: [], winner: null, labels: labelsEdge });
+  for (let i = 0; i < 5; i++) await nextFrame();
+  const qBefore = describe().dice.map((d) => d.q);
+  const tHoldN = performance.now();
+  hold(null);
+  for (let i = 0; i < 300; i++) {
+    await nextFrame();
+    if (performance.now() - tHoldN >= 300) break;
+    hold(null);
+  }
+  const qAfter = describe().dice.map((d) => d.q);
+  for (let i = 0; i < 16; i++) {
+    const a = qBefore[i], b = qAfter[i];
+    const diff1 = Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])+Math.abs(a[2]-b[2])+Math.abs(a[3]-b[3]);
+    const diff2 = Math.abs(a[0]+b[0])+Math.abs(a[1]+b[1])+Math.abs(a[2]+b[2])+Math.abs(a[3]+b[3]);
+    assert.ok(Math.min(diff1, diff2) <= 4e-6, `die ${i} q unchanged: diff1=${diff1}, diff2=${diff2}`);
   }
 }
 
