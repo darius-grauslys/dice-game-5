@@ -2,10 +2,11 @@ import * as THREE from "three";
 
 let points;
 let geometry;
+let positionsAttr;
+let colorsAttr;
 let positions;
-let sizes;
 let colors;
-const MAX = 4096;
+const MAX = 4000;
 
 let particles = [];
 let dustAnchor = null;
@@ -36,45 +37,28 @@ export function init(scene) {
   ringAnchor = null;
 
   positions = new Float32Array(MAX * 3);
-  sizes = new Float32Array(MAX);
-  colors = new Float32Array(MAX * 4);
-  geometry = {
-    isBufferGeometry: true,
-    type: "BufferGeometry",
-    positions,
-    sizes,
-    colors,
-    morphTargets: [],
-    morphAttributes: {},
-    bounds: new THREE.Box3(
-      new THREE.Vector3(-10, -10, -10),
-      new THREE.Vector3(10, 10, 10),
-    ),
-    boundingSphere: new THREE.Sphere(new THREE.Vector3(0, 0, 0), 17.32),
-    getPositions: function () {
-      return positions;
-    },
-    getSizes: function () {
-      return sizes;
-    },
-    getColors: function () {
-      return colors;
-    },
-    addEventListener: function () {},
-    removeEventListener: function () {},
-  };
+  colors = new Float32Array(MAX * 3);
+  geometry = new THREE.BufferGeometry();
+  positionsAttr = new THREE.BufferAttribute(positions, 3);
+  colorsAttr = new THREE.BufferAttribute(colors, 3);
+  geometry.setAttribute("position", positionsAttr);
+  geometry.setAttribute("color", colorsAttr);
+  geometry.setDrawRange(0, 0);
+
+  const gold = new THREE.Color("#ffd84a");
+
   const material = new THREE.PointsMaterial({
-    color: "#ffd84a",
-    size: 1,
-    opacity: 1,
+    size: 0.3,
+    sizeAttenuation: true,
+    vertexColors: true,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
     depthWrite: false,
+    color: gold,
   });
-  material.tangent = new THREE.Vector3(0, 0, 0);
-  material.uniforms = { tangent: new THREE.Vector3(0, 0, 0) };
+
   points = new THREE.Points(geometry, material);
-  points.intersectsFrustum = function () {
-    return true;
-  };
+  points.frustumCulled = false;
   scene.add(points);
 }
 
@@ -88,7 +72,6 @@ function makeDust(anchor) {
   const drift = 0.05;
   const vx = (Math.random() - 0.5) * drift;
   const vz = (Math.random() - 0.5) * drift;
-  const size = 10 + Math.random() * 10;
   return {
     type: "dust",
     x,
@@ -101,7 +84,6 @@ function makeDust(anchor) {
     cr: 1,
     cg: 0.847,
     cb: 0.29,
-    size,
   };
 }
 
@@ -110,7 +92,6 @@ function makeFallingFromRing(p, anchorY) {
   const drift = 0.05;
   const vx = (Math.random() - 0.5) * drift;
   const vz = (Math.random() - 0.5) * drift;
-  const size = 10 + Math.random() * 10;
   return {
     type: "dust",
     x: p.x,
@@ -123,7 +104,6 @@ function makeFallingFromRing(p, anchorY) {
     cr: 1,
     cg: 0.847,
     cb: 0.29,
-    size,
   };
 }
 
@@ -135,8 +115,6 @@ function makeSparkler(anchor) {
   const vy = speed * Math.sin(phi) * Math.sin(theta);
   const vz = speed * Math.sin(phi) * Math.cos(phi);
   const life = 600 + Math.random() * 600;
-  const isGold = Math.random() < 0.7;
-  const size = 12 + Math.random() * 8;
   return {
     type: "sparkler",
     x: anchor[0],
@@ -147,10 +125,9 @@ function makeSparkler(anchor) {
     vz,
     born: t,
     life,
-    cr: isGold ? 1 : 1,
-    cg: isGold ? 0.847 : 1,
-    cb: isGold ? 0.29 : 1,
-    size,
+    cr: 1,
+    cg: 0.847,
+    cb: 0.29,
   };
 }
 
@@ -193,7 +170,6 @@ export function dust(anchor) {
     const x0 = ringAnchor[0] + 2.0 * Math.cos(angleForm);
     const z0 = ringAnchor[2] + 2.0 * Math.sin(angleForm);
     const y0 = ringAnchor[1] + 1.0;
-    const size = 10 + Math.random() * 8;
     ringParticles.push({
       slot: i,
       tForm: t,
@@ -204,7 +180,6 @@ export function dust(anchor) {
       y0,
       z0,
       angleForm,
-      size,
     });
   }
 }
@@ -276,7 +251,7 @@ export function step(ms) {
 
   const ringCount = ringParticles.length;
   const partCount = particles.length;
-  const total = ringCount + partCount;
+  const liveCount = ringCount + partCount;
 
   let idx = 0;
   for (let i = 0; i < ringCount; i++) {
@@ -284,12 +259,10 @@ export function step(ms) {
     positions[idx * 3] = p.x;
     positions[idx * 3 + 1] = p.y;
     positions[idx * 3 + 2] = p.z;
-    const flicker = 0.7 + Math.random() * 0.6;
-    sizes[idx] = p.size * flicker;
-    colors[idx * 4] = 1;
-    colors[idx * 4 + 1] = 0.847;
-    colors[idx * 4 + 2] = 0.29;
-    colors[idx * 4 + 3] = 1;
+    const flicker = 0.85 + Math.random() * 0.15;
+    colors[idx * 3] = 1 * flicker;
+    colors[idx * 3 + 1] = 0.847 * flicker;
+    colors[idx * 3 + 2] = 0.29 * flicker;
     idx++;
   }
   for (let i = 0; i < partCount; i++) {
@@ -297,18 +270,19 @@ export function step(ms) {
     positions[idx * 3] = p.x;
     positions[idx * 3 + 1] = p.y;
     positions[idx * 3 + 2] = p.z;
-    const flicker = 0.7 + Math.random() * 0.6;
-    sizes[idx] = p.size * flicker;
-    colors[idx * 4] = p.cr;
-    colors[idx * 4 + 1] = p.cg;
-    colors[idx * 4 + 2] = p.cb;
-    colors[idx * 4 + 3] = p.opacity != null ? p.opacity : 1;
+    const flicker = 0.85 + Math.random() * 0.15;
+    const opacity = p.opacity != null ? p.opacity : 1;
+    colors[idx * 3] = p.cr * flicker * opacity;
+    colors[idx * 3 + 1] = p.cg * flicker * opacity;
+    colors[idx * 3 + 2] = p.cb * flicker * opacity;
     idx++;
   }
   for (let i = idx * 3; i < positions.length; i++) positions[i] = 0;
-  for (let i = idx; i < sizes.length; i++) sizes[i] = 0;
-  for (let i = idx * 4; i < colors.length; i++) colors[i] = 0;
-  geometry.needsUpdate = true;
+  for (let i = idx * 3; i < colors.length; i++) colors[i] = 0;
+
+  geometry.setDrawRange(0, liveCount);
+  positionsAttr.needsUpdate = true;
+  colorsAttr.needsUpdate = true;
 }
 
 export function count() {
