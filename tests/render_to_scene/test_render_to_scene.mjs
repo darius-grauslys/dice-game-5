@@ -466,9 +466,10 @@ export async function _sheo_check() {
 
   // Same again, but hold(null) called only once: same two checks pass.
   hold({ poses: [turnedPose], at: {x: 400, y: 300}, to: {x: 400, y: 300} });
+  const tStartB = performance.now(); // a fresh timer: hold the full MS.turn + 150 ms again before letting go
   for (let i = 0; i < 300; i++) {
     await nextFrame();
-    if (performance.now() - tStart >= MS.turn + 150) break;
+    if (performance.now() - tStartB >= MS.turn + 150) break;
     hold({ poses: [turnedPose], at: {x: 400, y: 300}, to: {x: 400, y: 300} });
   }
   hold(null);
