@@ -71,6 +71,7 @@ export function init({ canvas }) {
     });
 
   audioEl = document.createElement("audio");
+  document.body.appendChild(audioEl);
 
   function frame() {
     if (audioEl) {
