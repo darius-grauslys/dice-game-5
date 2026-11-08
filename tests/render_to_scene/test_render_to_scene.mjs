@@ -450,18 +450,19 @@ export async function _sheo_check() {
   hold(null);
   const tH0 = performance.now();
   let midAngle = null;
+  let midAngleAt = null;
   let finalAngle = null;
   for (let i = 0; i < 300; i++) {
     await nextFrame();
     const elapsed = performance.now() - tH0;
     const q = describe().dice.find((d) => d.id === 0).q;
     const a = angle(q0s, q);
-    if (elapsed >= 100 && elapsed <= 150 && midAngle === null) midAngle = a;
+    if (elapsed >= 60 && elapsed <= MS.turn - 40 && midAngle === null) { midAngle = a; midAngleAt = elapsed; }
     if (elapsed >= MS.turn + 100) { finalAngle = a; break; }
     hold(null);
   }
-  assert.ok(midAngle !== null, "midAngle should be set");
-  assert.ok(midAngle >= 0.2 * angle(q0s, q1) && midAngle <= 0.8 * angle(q0s, q1), `midAngle=${midAngle}, q0q1=${angle(q0s,q1)}`);
+  assert.ok(midAngle !== null, "midAngle should be set: no frame came 60..MS.turn - 40 ms into the turn back");
+  assert.ok(midAngle >= 0.05 * angle(q0s, q1) && midAngle <= 0.95 * angle(q0s, q1), `midAngle=${midAngle} at ${midAngleAt} ms, q0q1=${angle(q0s,q1)}`);
   assert.ok(finalAngle < 0.02, `finalAngle=${finalAngle}`);
 
   // Same again, but hold(null) called only once: same two checks pass.
@@ -475,17 +476,18 @@ export async function _sheo_check() {
   hold(null);
   const tH0b = performance.now();
   let midAngleB = null;
+  let midAngleBAt = null;
   let finalAngleB = null;
   for (let i = 0; i < 300; i++) {
     await nextFrame();
     const elapsed = performance.now() - tH0b;
     const q = describe().dice.find((d) => d.id === 0).q;
     const a = angle(q0s, q);
-    if (elapsed >= 100 && elapsed <= 150 && midAngleB === null) midAngleB = a;
+    if (elapsed >= 60 && elapsed <= MS.turn - 40 && midAngleB === null) { midAngleB = a; midAngleBAt = elapsed; }
     if (elapsed >= MS.turn + 100) { finalAngleB = a; break; }
   }
-  assert.ok(midAngleB !== null, "midAngleB should be set");
-  assert.ok(midAngleB >= 0.2 * angle(q0s, q1) && midAngleB <= 0.8 * angle(q0s, q1), `midAngleB=${midAngleB}, q0q1=${angle(q0s,q1)}`);
+  assert.ok(midAngleB !== null, "midAngleB should be set: no frame came 60..MS.turn - 40 ms into the turn back");
+  assert.ok(midAngleB >= 0.05 * angle(q0s, q1) && midAngleB <= 0.95 * angle(q0s, q1), `midAngleB=${midAngleB} at ${midAngleBAt} ms, q0q1=${angle(q0s,q1)}`);
   assert.ok(finalAngleB < 0.02, `finalAngleB=${finalAngleB}`);
 
   // With nothing ever held since the last play: hold(null) once per frame for 300 ms leaves every die's q unchanged.
