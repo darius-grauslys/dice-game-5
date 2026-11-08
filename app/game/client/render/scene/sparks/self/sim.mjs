@@ -7,13 +7,8 @@ function radiusAround(p, anchor) {
   return Math.sqrt(dx * dx + dz * dz);
 }
 
-function countGoldPixels(canvas) {
-  const w = canvas.width, h = canvas.height;
-  const tmp = document.createElement("canvas");
-  tmp.width = w; tmp.height = h;
-  const tctx = tmp.getContext("2d");
-  tctx.drawImage(canvas, 0, 0);
-  const data = tctx.getImageData(0, 0, w, h).data;
+function countGoldPixels(renderer, camera, w, h) {
+  const data = renderer.readPixels(camera, { x: 0, y: 0, width: w, height: h });
   let gold = 0;
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
@@ -28,29 +23,17 @@ function countGoldPixels(canvas) {
 
 export async function _sheo_sim(canvas, scenario) {
   const renderer = new THREE.WebGLRenderer({ canvas, devicePixelRatio: 1 });
-  renderer.setSize(800, 600);
-  const origRenderBufferDirect = renderer.renderBufferDirect.bind(renderer);
-  renderer.renderBufferDirect = function (buffer, program, gl, camera, scope) {
-    if (buffer && buffer.isCamera) return;
-    if (buffer && buffer.object && buffer.object.isPoints && !buffer.material) {
-      buffer.material = buffer.object.material;
-    } else if (buffer && buffer.isPoints && !buffer.material) {
-      buffer.material = buffer.material || (buffer.object && buffer.object.material);
-    }
-    return origRenderBufferDirect(buffer, program, gl, camera, scope);
-  };
+  renderer.setSize(400, 300);
 
   const scene = new THREE.Scene();
 
   const camera = new THREE.Camera();
-  camera.position.set(0, 2, -6);
+  camera.position.set(0, 6, 12);
+  camera.lookAt(0, 0, 0);
   camera.fov = 45;
 
   init(scene);
-  console.log("renderer keys:", Object.keys(renderer).filter(k => /render|shader|point|gl|context/i.test(k)).join(","));
-  console.log("renderer proto keys:", Object.getPrototypeOf(renderer).constructor.name);
-  const pts = scene.children.find(c => c && c.isPoints);
-  console.log("points geometry type:", pts && pts.geometry && pts.geometry.type, "drawRange:", pts && pts.geometry && pts.geometry.drawRange);
+  console.log("renderer methods:", Object.keys(renderer).filter(k => /read|pixel/i.test(k)).join(","));
 
   const a1 = [0, 1.5, 0];
   dust(a1);
@@ -65,7 +48,7 @@ export async function _sheo_sim(canvas, scenario) {
   console.log("after 1000ms: ring().length=" + r1.length + " minR=" + (isFinite(minR1) ? minR1.toFixed(4) : "n/a") + " maxR=" + (isFinite(maxR1) ? maxR1.toFixed(4) : "n/a") + " count=" + count());
 
   renderer.render(scene, camera);
-  const gold1 = countGoldPixels(canvas);
+  const gold1 = countGoldPixels(renderer, camera, 400, 300);
   console.log("gold pixels after 1s ring: " + gold1);
 
   const a2 = [1.2, 1.5, 0.5];
@@ -84,13 +67,13 @@ export async function _sheo_sim(canvas, scenario) {
   step(5000);
   console.log("after dust(null)+5000ms: count=" + count());
   renderer.render(scene, camera);
-  const gold2 = countGoldPixels(canvas);
+  const gold2 = countGoldPixels(renderer, camera, 400, 300);
   console.log("gold pixels after dust(null)+5s: " + gold2);
 
   sparkler([0, 1.5, 0]);
   step(320);
   renderer.render(scene, camera);
-  const gold3 = countGoldPixels(canvas);
+  const gold3 = countGoldPixels(renderer, camera, 400, 300);
   console.log("gold pixels after sparkler 320ms: " + gold3);
 
   return { ok: true, gold1, gold2, gold3 };

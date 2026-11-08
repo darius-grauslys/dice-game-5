@@ -4,11 +4,9 @@ let points;
 let geometry;
 let positionsAttr;
 let colorsAttr;
-let sizeAttr;
 let positions;
 let colors;
-let sizes;
-const MAX = 4096;
+const MAX = 4000;
 
 let particles = [];
 let dustAnchor = null;
@@ -40,22 +38,20 @@ export function init(scene) {
 
   positions = new Float32Array(MAX * 3);
   colors = new Float32Array(MAX * 3);
-  sizes = new Float32Array(MAX);
   geometry = new THREE.BufferGeometry();
-  positionsAttr = new THREE.BufferAttribute(positions, 3);
-  colorsAttr = new THREE.BufferAttribute(colors, 3);
-  sizeAttr = new THREE.BufferAttribute(sizes, 1);
+  positionsAttr = new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage);
+  colorsAttr = new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage);
   geometry.setAttribute("position", positionsAttr);
   geometry.setAttribute("color", colorsAttr);
-  geometry.setAttribute("size", sizeAttr);
   geometry.setDrawRange(0, 0);
 
   const material = new THREE.PointsMaterial({
-    color: "#ffd84a",
     size: 0.14,
     sizeAttenuation: true,
-    opacity: 1,
     vertexColors: true,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
   });
 
   points = new THREE.Points(geometry, material);
@@ -282,14 +278,9 @@ export function step(ms) {
   for (let i = idx * 3; i < positions.length; i++) positions[i] = 0;
   for (let i = idx * 3; i < colors.length; i++) colors[i] = 0;
 
-  for (let i = 0; i < liveCount; i++) sizes[i] = 0.14;
-  for (let i = liveCount; i < sizes.length; i++) sizes[i] = 0;
-
   geometry.setDrawRange(0, liveCount);
-  if (geometry.drawRange && geometry.drawRange.end === undefined) geometry.drawRange.end = liveCount;
   positionsAttr.needsUpdate = true;
   colorsAttr.needsUpdate = true;
-  sizeAttr.needsUpdate = true;
 }
 
 export function count() {
